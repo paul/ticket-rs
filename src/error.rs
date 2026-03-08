@@ -1,1 +1,256 @@
 // Error types for the ticket library.
+
+use std::fmt;
+
+/// Unified error type for all ticket library operations.
+#[derive(Debug)]
+pub enum Error {
+    /// A ticket with the given ID could not be found.
+    TicketNotFound { id: String },
+    /// A partial ID matched more than one ticket.
+    AmbiguousId {
+        partial: String,
+        candidates: Vec<String>,
+    },
+    /// No `.tickets` directory could be found in the current or any parent directory.
+    TicketsNotFound,
+    /// An unrecognized status string was encountered.
+    InvalidStatus { value: String },
+    /// An unrecognized ticket type string was encountered.
+    InvalidType { value: String },
+    /// An unrecognized priority value was encountered.
+    InvalidPriority { value: String },
+    /// An underlying I/O error.
+    Io(std::io::Error),
+    /// A YAML parse or serialization error.
+    Yaml(serde_yaml::Error),
+}
+
+/// Convenience alias for `Result<T, Error>`.
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::TicketNotFound { id } => {
+                write!(f, "ticket '{id}' not found")
+            }
+            Error::AmbiguousId {
+                partial,
+                candidates,
+            } => {
+                write!(
+                    f,
+                    "ambiguous id '{partial}', matches: {}",
+                    candidates.join(", ")
+                )
+            }
+            Error::TicketsNotFound => {
+                write!(f, "no .tickets directory found")
+            }
+            Error::InvalidStatus { value } => {
+                write!(
+                    f,
+                    "invalid status '{value}', valid options: open, in_progress, closed"
+                )
+            }
+            Error::InvalidType { value } => {
+                write!(
+                    f,
+                    "invalid type '{value}', valid options: bug, feature, task, epic, chore"
+                )
+            }
+            Error::InvalidPriority { value } => {
+                write!(
+                    f,
+                    "invalid priority '{value}', valid options: 0, 1, 2, 3, 4"
+                )
+            }
+            Error::Io(err) => write!(f, "{err}"),
+            Error::Yaml(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Io(err) => Some(err),
+            Error::Yaml(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::Io(err)
+    }
+}
+
+impl From<serde_yaml::Error> for Error {
+    fn from(err: serde_yaml::Error) -> Self {
+        Error::Yaml(err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error::Error as StdError;
+
+    #[test]
+    fn display_ticket_not_found_contains_id() {
+        let err = Error::TicketNotFound {
+            id: "abc-1234".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("abc-1234"),
+            "expected message to contain 'abc-1234', got: {msg}"
+        );
+        assert!(
+            msg.contains("not found"),
+            "expected message to contain 'not found', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn display_ambiguous_id_contains_partial_and_candidates() {
+        let err = Error::AmbiguousId {
+            partial: "tr-ab".to_string(),
+            candidates: vec!["tr-ab12".to_string(), "tr-ab34".to_string()],
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("tr-ab"),
+            "expected message to contain partial id 'tr-ab', got: {msg}"
+        );
+        assert!(
+            msg.contains("tr-ab12"),
+            "expected message to list candidate 'tr-ab12', got: {msg}"
+        );
+        assert!(
+            msg.contains("tr-ab34"),
+            "expected message to list candidate 'tr-ab34', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn display_tickets_not_found() {
+        let err = Error::TicketsNotFound;
+        let msg = err.to_string();
+        assert!(
+            msg.contains("no .tickets directory found"),
+            "expected message to contain 'no .tickets directory found', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn display_invalid_status_names_value_and_valid_options() {
+        let err = Error::InvalidStatus {
+            value: "pending".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("pending"),
+            "expected message to contain bad value 'pending', got: {msg}"
+        );
+        assert!(
+            msg.contains("open"),
+            "expected message to list valid option 'open', got: {msg}"
+        );
+        assert!(
+            msg.contains("in_progress"),
+            "expected message to list valid option 'in_progress', got: {msg}"
+        );
+        assert!(
+            msg.contains("closed"),
+            "expected message to list valid option 'closed', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn display_invalid_type_names_value_and_valid_options() {
+        let err = Error::InvalidType {
+            value: "story".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("story"),
+            "expected message to contain bad value 'story', got: {msg}"
+        );
+        for opt in &["bug", "feature", "task", "epic", "chore"] {
+            assert!(
+                msg.contains(opt),
+                "expected message to list valid option '{opt}', got: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn display_invalid_priority_names_value_and_valid_options() {
+        let err = Error::InvalidPriority {
+            value: "urgent".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("urgent"),
+            "expected message to contain bad value 'urgent', got: {msg}"
+        );
+        for opt in &["0", "1", "2", "3", "4"] {
+            assert!(
+                msg.contains(opt),
+                "expected message to list valid option '{opt}', got: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_io_error_produces_io_variant() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let err: Error = io_err.into();
+        assert!(
+            matches!(err, Error::Io(_)),
+            "expected Io variant, got: {err:?}"
+        );
+        assert!(
+            !err.to_string().is_empty(),
+            "expected non-empty Display output for Io variant"
+        );
+    }
+
+    #[test]
+    fn from_yaml_error_produces_yaml_variant() {
+        // Trigger a real serde_yaml parse error.
+        let yaml_err = serde_yaml::from_str::<serde_yaml::Value>(":\n  bad: [yaml").unwrap_err();
+        let err: Error = yaml_err.into();
+        assert!(
+            matches!(err, Error::Yaml(_)),
+            "expected Yaml variant, got: {err:?}"
+        );
+        assert!(
+            !err.to_string().is_empty(),
+            "expected non-empty Display output for Yaml variant"
+        );
+    }
+
+    #[test]
+    fn std_error_source_returns_some_for_io_variant() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let err = Error::Io(io_err);
+        assert!(
+            err.source().is_some(),
+            "expected source() to return Some for Io variant"
+        );
+    }
+
+    #[test]
+    fn std_error_source_returns_none_for_non_wrapping_variants() {
+        let err = Error::TicketsNotFound;
+        assert!(
+            err.source().is_none(),
+            "expected source() to return None for TicketsNotFound"
+        );
+    }
+}

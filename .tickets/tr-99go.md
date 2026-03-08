@@ -12,5 +12,22 @@ tags: [phase-6, testing]
 ---
 # Integration tests
 
-Write integration tests in tests/ directory. Test each command end-to-end by running the ticket binary against a temp .tickets/ directory. Cover: create (verify file created with correct frontmatter), show (verify dynamic sections), status changes, dep/undep (verify frontmatter updated), dep tree output format, dep cycle detection, link/unlink symmetry, ls/ready/blocked/closed filtering, add-note (verify timestamp and ## Notes section), update (all field types including tag add/remove), query JSON output, tree display, partial ID resolution (exact, partial, ambiguous error), plugin discovery (create a temp plugin script in PATH). Use assert_cmd and tempdir crates for test infrastructure.
+Write integration tests in tests/ directory. These are end-to-end black-box tests that exercise the compiled `ticket` binary against a real `.tickets/` directory. Unit tests for individual modules are written alongside the implementation (see each feature ticket); this ticket covers only the integration layer.
 
+Test each command end-to-end by running the ticket binary against a temp .tickets/ directory. Cover: create (verify file created with correct frontmatter), show (verify dynamic sections), status changes, dep/undep (verify frontmatter updated), dep tree output format, dep cycle detection, link/unlink symmetry, ls/ready/blocked/closed filtering, add-note (verify timestamp and ## Notes section), update (all field types including tag add/remove), query JSON output, tree display, partial ID resolution (exact, partial, ambiguous error), plugin discovery (create a temp plugin script in PATH). Use assert_cmd and tempdir crates for test infrastructure.
+
+## Testing approach
+
+Use `assert_cmd::Command` to invoke the `ticket` binary and `tempfile::tempdir()` for isolated `.tickets/` directories. Each test scenario maps to one of the feature files in `~/.local/share/ticket/features/` — use those as the authoritative specification for expected output and exit codes. Key scenarios to cover per feature file:
+
+- **ticket_creation.feature**: all default field values, optional sections (design, acceptance), parent validation, `.tickets/` dir created on demand.
+- **ticket_status.feature**: all four commands (start, close, reopen, status), invalid status error, partial ID.
+- **ticket_dependencies.feature**: dep/undep round-trip, idempotency, tree output with box-drawing chars, sorting by subtree depth, cycle handling.
+- **ticket_links.feature**: symmetric link creation, three-ticket linking, idempotency, unlink both directions.
+- **ticket_listing.feature**: ls/list format, status/assignee/tag filters, ready (no deps, all deps closed), blocked (unclosed deps only in output), closed (mtime sort, limit).
+- **ticket_notes.feature**: Notes section creation, timestamp format, multiple notes accumulate.
+- **ticket_show.feature**: dynamic Blockers/Blocking/Children/Linked sections, parent annotation.
+- **ticket_query.feature**: JSONL output, all fields present, jq filter piping.
+- **id_resolution.feature**: exact, prefix, suffix, substring, ambiguous error, not-found error, exact-takes-precedence.
+- **ticket_directory.feature**: parent-dir walking, TICKETS_DIR override, error when no .tickets found.
+- **ticket_plugins.feature**: tk-/ticket- dispatch, super bypass, env vars passed, help listing.

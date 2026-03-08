@@ -51,7 +51,7 @@ impl fmt::Display for Error {
             Error::InvalidStatus { value } => {
                 write!(
                     f,
-                    "invalid status '{value}', valid options: open, in_progress, closed"
+                    "invalid status '{value}', valid options: open in_progress closed"
                 )
             }
             Error::InvalidType { value } => {

@@ -1,6 +1,6 @@
 ---
 id: tr-2ns4
-status: open
+status: closed
 deps: [tr-siyb, tr-kspr]
 links: []
 created: 2026-03-08T06:30:31Z
@@ -39,3 +39,9 @@ TICKET_SCRIPT=./target/debug/ticket behave features/ticket_status.feature
 ```
 
 Scenarios cover all four commands, invalid status rejection, output messages, and partial ID resolution. The feature file is the authoritative output-format spec — match it exactly.
+
+## Notes
+
+**2026-03-08T21:57:04Z**
+
+Implementation used the existing Ticket::read_from_str / write_to_string round-trip (already proven byte-identical in ticket.rs tests) rather than string-bashing the status field. set_status_impl returns the full output message string so each public function does println!("{msg}") with no independent format call — eliminating the typo risk. InvalidStatus display was changed to space-separate valid options (open in_progress closed) to match the BDD feature file assertion. All 86 unit tests pass; all 9 BDD scenarios pass.

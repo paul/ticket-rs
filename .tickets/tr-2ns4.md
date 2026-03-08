@@ -29,3 +29,13 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/status.rs`. Use `te
 - **Partial ID resolution**: write a ticket with ID `test-9999`, call `start "9999"`, assert the correct file is updated.
 - **Non-existent ticket**: assert a `TicketNotFound` error for an unknown ID.
 - **Output message**: assert stdout contains `"Updated <id> -> <new_status>"`.
+
+## BDD Integration Tests
+
+Once `start`, `close`, `reopen`, and `status` are wired into the binary, run:
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_status.feature
+```
+
+Scenarios cover all four commands, invalid status rejection, output messages, and partial ID resolution. The feature file is the authoritative output-format spec — match it exactly.

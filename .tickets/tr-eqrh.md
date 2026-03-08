@@ -28,3 +28,11 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/list.rs`. Use in-me
 - **`-a` assignee filter**: only show blocked tickets for the specified assignee.
 - **`-T` tag filter**: only show blocked tickets with the specified tag.
 - **Empty output**: when no tickets are blocked, assert output is empty.
+
+## BDD Integration Tests
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_listing.feature
+```
+
+The `blocked` scenarios in `ticket_listing.feature` cover: unclosed-dep detection, all-deps-closed exclusion, closed-ticket exclusion, only open deps shown in output, priority badge, sort order, and assignee/tag filters. Run the full listing feature file after tr-fbj8, tr-gkxo, and tr-kpds are also complete.

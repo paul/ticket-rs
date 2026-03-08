@@ -29,3 +29,11 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/note.rs`. Use `temp
 - **Output message**: assert stdout is `"Note added to <id>"`.
 - **Partial ID resolution**: create ticket `note-0001`, call `add-note 0001 "text"`; assert the correct file is updated.
 - **Non-existent ticket**: assert a `TicketNotFound` error.
+
+## BDD Integration Tests
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_notes.feature
+```
+
+Scenarios cover: adding a note (creates `## Notes` section if absent), timestamp format in bold ISO 8601, note text appears after timestamp, multiple notes accumulate in order, and partial ID resolution. The timestamp pattern `**YYYY-MM-DDTHH:MM:SSZ**` must match exactly as the BDD suite asserts it via regex.

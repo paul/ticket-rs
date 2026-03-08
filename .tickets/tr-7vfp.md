@@ -27,3 +27,12 @@ Write unit tests in a `#[cfg(test)]` module at the bottom of `src/id.rs`. Test t
 - **`generate_id` format**: call `generate_id` with a known dir name and assert the result matches the regex `^[a-z]{2,4}-[0-9a-f]{4}$`.
 - **`generate_id` suffix is hex**: assert the suffix portion contains only characters in `[0-9a-f]`.
 - **`generate_id` suffix length**: assert the suffix is exactly 4 characters.
+
+## Notes
+
+During review, two issues were found and fixed before approval:
+
+1. Suffix validation in tests used `is_ascii_hexdigit()` which accepts uppercase `A-F`, violating the lowercase-only `[0-9a-f]` requirement. Fixed by replacing with `matches!(c, '0'..='9' | 'a'..='f')` in both `generate_id_suffix_is_hex` and the `regex_lite` helper.
+2. Clippy warned on `.split('-').last()` over a `DoubleEndedIterator` (needlessly iterates the whole iterator). Fixed by switching to `.split('-').next_back()`.
+
+As a follow-on from the review, the Behave/BDD integration test suite from the bash ticket implementation was copied into `features/` and confirmed to run cleanly (123 scenarios, 0 failures) against the bash `ticket` script via `TICKET_SCRIPT=/path/to/ticket behave features/`. This provides a regression baseline; as Rust commands are implemented the same suite can be run with `TICKET_SCRIPT=./target/debug/ticket` to track parity.

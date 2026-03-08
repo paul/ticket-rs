@@ -29,3 +29,13 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/list.rs`. Build in-
 - **Sort by priority then ID**: tickets with priorities 3, 1, 1 and IDs `c`, `b`, `a`; assert output order is priority-1/ID-a, priority-1/ID-b, priority-3/ID-c.
 - **Empty list**: pass no tickets; assert output is empty.
 - **`list` alias works**: the same handler function is callable via both `ls` and `list` subcommands (test via CLI dispatch or by calling the handler directly with both names).
+
+## BDD Integration Tests
+
+`ls`/`list` scenarios live in the listing feature alongside `ready`, `blocked`, and `closed`. Once `ls` is wired up, run:
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_listing.feature
+```
+
+The scenarios for `ls` cover output format, status/assignee/tag filters, and sort order. The `ready`, `blocked`, and `closed` scenarios in the same file will fail until those commands are also implemented (tr-gkxo, tr-eqrh, tr-kpds) — that's expected and acceptable while working incrementally.

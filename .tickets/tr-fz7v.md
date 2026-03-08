@@ -28,3 +28,13 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/show.rs`, testing t
 - **Parent annotation**: show a ticket with a `parent` field set; assert the parent's title appears in the output (as an inline annotation or comment after the parent ID).
 - **Non-existent ticket**: assert a `TicketNotFound` error.
 - **Partial ID resolution**: create ticket `show-001`, show via `"001"`, assert the output contains `id: show-001`.
+
+## BDD Integration Tests
+
+Once `show` is wired into the binary, run:
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_show.feature
+```
+
+The scenarios cover: displaying frontmatter and title, the dynamic `## Blockers` / `## Blocking` / `## Children` / `## Linked` sections, parent annotation, and non-existent ticket errors. Run with `--no-capture` to see raw output on failure. The pager is not exercised by the BDD suite (tests run non-TTY), so pager integration is tested separately in tr-pfsb.

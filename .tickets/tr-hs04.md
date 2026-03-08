@@ -27,3 +27,11 @@ Write unit tests in a `#[cfg(test)]` module in `src/plugin.rs`. Use `tempfile::t
 - **`TICKETS_DIR` passed to plugin**: verify the env-building logic sets `TICKETS_DIR` to the resolved tickets directory.
 - **`TK_SCRIPT` passed to plugin**: verify the env-building logic sets `TK_SCRIPT` to the path of the current binary.
 - **Command not in PATH returns `None`**: call plugin lookup for a command that has no `tk-` or `ticket-` executable in `PATH`; assert `None` is returned so the built-in fallback can handle it.
+
+## BDD Integration Tests
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_plugins.feature
+```
+
+Scenarios cover: `tk-` and `ticket-` prefix dispatch, plugin receives `TICKETS_DIR` and `TK_SCRIPT` env vars, description extraction from `# tk-plugin:` comment, plugins listed in `help` output, and the `super` bypass (requires tr-gcko). The suite creates temporary plugin scripts in a temp `PATH` dir — no pre-installed plugins are required. Run after tr-gcko and tr-mhd5 are also complete for full coverage.

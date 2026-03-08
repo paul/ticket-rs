@@ -33,3 +33,17 @@ Write unit tests in a `#[cfg(test)]` module at the bottom of `src/store.rs`. Use
 - **`read_ticket` / `write_ticket` round-trip**: write a `Ticket` to disk with `write_ticket`, read it back with `read_ticket`, assert all fields are equal to the original.
 - **`list_tickets`**: write three ticket files to a temp `.tickets/` dir, call `list_tickets`, assert all three are returned.
 - **`ensure_dir`**: call on a temp dir without a `.tickets/` subdir; assert the directory is subsequently present.
+
+## BDD Integration Tests
+
+The store underpins all commands, but two feature files exercise its behavior directly. Once any commands that depend on the store are wired up, run:
+
+```bash
+# Partial ID resolution (exact, prefix, suffix, substring, ambiguous, exact-takes-precedence)
+TICKET_SCRIPT=./target/debug/ticket behave features/id_resolution.feature
+
+# Directory walking, TICKETS_DIR env override, error when no .tickets found
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_directory.feature
+```
+
+`id_resolution.feature` requires `show`, `status`, `dep`, and `link` to be functional. `ticket_directory.feature` requires `ls`, `show`, `create`, `dep`, and `ready`. Run these suites after tr-04qd, tr-fz7v, tr-2ns4, tr-fbj8, and tr-gkxo are complete.

@@ -28,3 +28,11 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/list.rs`. Use in-me
 - **`-a` assignee filter**: only show ready tickets assigned to the specified user.
 - **`-T` tag filter**: only show ready tickets with the specified tag.
 - **Empty output**: when no tickets are ready, assert output is empty.
+
+## BDD Integration Tests
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_listing.feature
+```
+
+The `ready` scenarios in `ticket_listing.feature` cover: tickets with no deps, all deps closed, any unclosed dep, closed tickets excluded, priority badge format, sort order, and assignee/tag filters. Run the full listing feature file after tr-fbj8, tr-eqrh, and tr-kpds are all complete to validate the whole listing surface together.

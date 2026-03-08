@@ -27,3 +27,11 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/dep.rs` (or a dedic
 - **Sorting — by subtree depth then ID**: shallow children appear before deep ones; within the same depth, sort alphabetically by ID (see feature file scenarios for exact ordering expectations).
 - **Partial ID for root**: create ticket `task-0001`, call `dep tree 0001`; assert the tree is rooted at `task-0001`.
 - **Non-existent root ticket**: assert a `TicketNotFound` error.
+
+## BDD Integration Tests
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_dependencies.feature
+```
+
+The `dep tree` scenarios cover: basic tree display with box-drawing characters, status and title in each node, multiple direct deps, deduplication (default), `--full` flag disabling dedup, cycle handling, and sorting by subtree depth then ID. The sorting scenarios are particularly precise — the feature file documents the exact expected ordering and should be treated as the spec. Run the full dependency feature file after tr-aaqe and tr-23te are also complete.

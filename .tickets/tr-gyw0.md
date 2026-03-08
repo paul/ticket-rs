@@ -37,3 +37,13 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/update.rs`. Factor 
 - **`--tags` mutual exclusivity with `--remove-tags`**: assert an error when both are supplied.
 - **Unmodified fields preserved**: update only the title; assert all frontmatter fields and sections not targeted by the update are byte-identical to the original.
 - **Output**: assert stdout contains the ticket ID on success.
+
+## BDD Integration Tests
+
+There is no dedicated feature file for `update`. Validate it indirectly: the bash reference implementation handles `update` as an internal script helper that the other feature files exercise through `ticket show` output and field assertions. Once implemented, check for regressions by running the full suite:
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/
+```
+
+Pay particular attention to `ticket_show.feature` and `ticket_listing.feature`, which rely on correct field values after mutations.

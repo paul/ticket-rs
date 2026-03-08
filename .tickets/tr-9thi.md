@@ -1,6 +1,6 @@
 ---
 id: tr-9thi
-status: open
+status: in_progress
 deps: [tr-n2ln]
 links: []
 created: 2026-03-08T06:29:51Z
@@ -29,3 +29,9 @@ Write unit tests in a `#[cfg(test)]` module at the bottom of `src/ticket.rs`.
 - **Missing section**: assert that a ticket without a `## Notes` section returns `None` (or empty) for that section without error.
 - **Invalid YAML**: assert that `read_from_str` returns an `Err` for malformed frontmatter.
 - **Invalid status value**: assert that an unrecognized status string (e.g., `"unknown"`) returns an `Err`.
+
+## Notes
+
+**2026-03-08T07:32:22Z**
+
+Simplify body parsing: Instead of parsing description and named sections (## Design, ## Acceptance Criteria, ## Notes) into structured fields, store only 'title' (extracted from first # heading) and 'body' (raw markdown after frontmatter, kept as plaintext). This guarantees byte-identical round-trips without reconstruction risk. The 'update' command (tr-gyw0) can add section-level helpers later if needed. The BTreeMap<String, String> sections approach is dropped. Keep 'created' as DateTime<Utc> for now — local timezone support is a nice-to-have deferred for later.

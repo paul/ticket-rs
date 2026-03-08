@@ -30,3 +30,14 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/tree.rs`. Test tree
 - **Subtree rooted at given ticket**: call `tree B` where B has a parent A and child C; assert only B and C appear (not A).
 - **Omitted ID shows all roots**: call `tree` with no argument; assert all tickets with no visible parent are shown as roots.
 - **`NO_COLOR` env var disables color**: set the env var and assert no ANSI escape codes appear in the output.
+
+## BDD Integration Tests
+
+There is no dedicated feature file for the `tree` command (parent/child hierarchy). The `ticket_show.feature` exercises the `## Children` section which covers some of the same data. Validate the tree command's output format manually against the bash reference and run the full suite for regressions:
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_show.feature
+TICKET_SCRIPT=./target/debug/ticket behave features/
+```
+
+The dep-tree analogue (`ticket_dependencies.feature`) is a useful structural reference for the box-drawing character format, even though it walks `deps` rather than `parent`.

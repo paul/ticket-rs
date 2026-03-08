@@ -34,3 +34,13 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/create.rs`. Use `te
 - **`.tickets/` directory created**: run create against a temp dir with no `.tickets/` subdir; assert the dir exists after.
 - **ID collision retry**: pre-seed the store with a file whose name would collide; assert create still succeeds and produces a non-colliding ID.
 - **ID printed to stdout**: assert the printed output matches the ticket ID format.
+
+## BDD Integration Tests
+
+Once the `create` command is wired into the binary, verify it against the full scenario suite:
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_creation.feature
+```
+
+All 17 scenarios in `ticket_creation.feature` must pass. These cover default field values, optional sections (description, design, acceptance criteria), assignee, type, priority, parent validation, timestamp format, and `.tickets/` directory creation on demand. The feature file is the authoritative acceptance spec — unit tests above validate logic in isolation, the BDD suite validates end-to-end observable behavior.

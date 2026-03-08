@@ -27,3 +27,11 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/list.rs`. Use `temp
 - **`-a` assignee filter**: assert only the specified assignee's closed tickets appear.
 - **`-T` tag filter**: assert only tagged tickets appear.
 - **Empty output**: when no closed tickets exist, assert output is empty.
+
+## BDD Integration Tests
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_listing.feature
+```
+
+The `closed` scenarios in `ticket_listing.feature` cover: closed-ticket display, open-ticket exclusion, output format, `--limit` flag, default limit of 20, mtime sort order, and assignee/tag filters. Run the full listing feature file after tr-fbj8, tr-gkxo, and tr-eqrh are also complete.

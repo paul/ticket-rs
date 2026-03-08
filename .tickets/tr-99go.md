@@ -31,3 +31,19 @@ Use `assert_cmd::Command` to invoke the `ticket` binary and `tempfile::tempdir()
 - **id_resolution.feature**: exact, prefix, suffix, substring, ambiguous error, not-found error, exact-takes-precedence.
 - **ticket_directory.feature**: parent-dir walking, TICKETS_DIR override, error when no .tickets found.
 - **ticket_plugins.feature**: tk-/ticket- dispatch, super bypass, env vars passed, help listing.
+
+## BDD Integration Tests
+
+This ticket IS the BDD integration test layer. Rather than (or in addition to) writing Rust `tests/` integration tests with `assert_cmd`, consider using the Behave suite in `features/` as the primary integration test vehicle. The suite is already wired in the project:
+
+```bash
+# Run against the Rust binary (target once all commands are implemented)
+TICKET_SCRIPT=./target/debug/ticket behave features/
+
+# Run against the bash reference to confirm the harness is sound
+TICKET_SCRIPT=/home/rando/.local/share/ticket/ticket behave features/
+```
+
+The bash reference passes all 123 scenarios across 12 feature files. The Rust implementation should reach the same score. Individual feature files can be targeted during incremental development — each command ticket documents which feature file it maps to in its own `## BDD Integration Tests` section.
+
+If `assert_cmd`-based Rust integration tests are written in `tests/`, they should duplicate a subset of the BDD scenarios as a fast sanity check in `cargo test`, not replace the BDD suite.

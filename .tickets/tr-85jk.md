@@ -28,3 +28,11 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/query.rs`. Test the
 - **Optional fields absent when `None`**: serialize a ticket with no `assignee`, `external-ref`, `parent`, or `tags`; assert those keys are either absent or `null` (match the bash version's behavior).
 - **`created` as ISO 8601 string**: assert the `created` value is a quoted UTC datetime string.
 - **Round-trip**: parse a JSON line produced by the serializer back into a `serde_json::Value`; assert no parse error.
+
+## BDD Integration Tests
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_query.feature
+```
+
+Scenarios cover: JSONL output format (one object per line), all expected field names present (including `external-ref` hyphenated), `deps`/`links`/`tags` as JSON arrays, optional fields absent when unset, and jq filter piping (requires `jq` installed). The `external-ref` key name is a common gotcha — the JSON key must be hyphenated to match the bash version's output.

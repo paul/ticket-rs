@@ -27,3 +27,13 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/dep.rs` (or a dedic
 - **in_progress tickets included**: A is `in_progress`, B is `open`, A → B → A; assert the cycle is still detected.
 - **Non-cyclic dep chain**: A → B → C (linear); assert no cycle is detected.
 - **Output format**: assert the cycle chain is printed as `"a -> b -> c -> a"` with each ticket on a subsequent line showing `[status]` and title.
+
+## BDD Integration Tests
+
+`dep cycle` does not have dedicated scenarios in `ticket_dependencies.feature` (cycle detection is validated indirectly via the tree command's cycle-handling scenario). Validate via the dependency feature file once all Phase 2 commands are implemented:
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_dependencies.feature
+```
+
+Use the bash implementation as the reference: `TICKET_SCRIPT=/home/rando/.local/share/ticket/ticket behave features/ticket_dependencies.feature` passes cleanly and sets the expected output format.

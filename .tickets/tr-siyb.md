@@ -16,3 +16,20 @@ Create src/cli.rs with clap derive-based command definitions. Define the top-lev
 
 After parsing args, apply the --color flag globally using `console::set_colors_enabled()`: `always` forces colors on, `never` forces them off, `auto` (default) defers to console's built-in TTY + `NO_COLOR`/`CLICOLOR` detection. All output code should use `console::style()` for coloring rather than writing ANSI escapes manually — console's global state will then gate color output correctly throughout the binary.
 
+## BDD Integration Tests
+
+The CLI skeleton is a prerequisite for all BDD tests. Once stub commands are wired (even those that print "not yet implemented"), smoke-test the harness with:
+
+```bash
+cargo build
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_creation.feature
+```
+
+As each Phase 1 command is implemented in subsequent tickets, run its corresponding feature file. The full suite is run once all commands are complete:
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/
+```
+
+The bash implementation serves as the reference baseline — all 123 scenarios in all 12 feature files pass against it.
+

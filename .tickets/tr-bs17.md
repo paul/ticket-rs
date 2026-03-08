@@ -29,3 +29,11 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/link.rs`. Use `temp
 - **`unlink` — link not found**: call `unlink A B` when no link exists; assert failure with `"Link not found"`.
 - **Non-existent ticket**: call `link A nonexistent`; assert a `TicketNotFound` error.
 - **Partial ID resolution**: use partial IDs; assert the correct tickets are updated.
+
+## BDD Integration Tests
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_links.feature
+```
+
+Scenarios cover: linking two tickets symmetrically, linking three tickets (all pairs), idempotency, partial-update when some links already exist, unlinking both directions, unlink-not-found error, non-existent ticket error, and output message format. All scenarios must pass — the link count in output messages (e.g. `"Added 6 link(s) between 3 tickets"`) must match exactly.

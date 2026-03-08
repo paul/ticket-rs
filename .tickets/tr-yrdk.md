@@ -16,3 +16,12 @@ Create src/highlight.rs. Use syntect crate (default-fancy feature, pure Rust) to
 
 Respect color settings by checking `console::colors_enabled()` — this single call already accounts for TTY detection, `NO_COLOR`, `CLICOLOR`, and the `--color` flag applied at startup via `console::set_colors_enabled()`. Do not re-implement that logic here; just gate the highlighter on `colors_enabled()`.
 
+## BDD Integration Tests
+
+Syntax highlighting is not directly tested by the BDD suite — tests run non-TTY so colors are off and ANSI codes are absent. What matters for BDD purposes is that `show` output remains parseable when highlighting is disabled. Run after integration to confirm no regressions:
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_show.feature
+```
+
+Validate highlighting visually by running `./target/debug/ticket show <id>` in a TTY with a real ticket.

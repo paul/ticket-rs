@@ -29,3 +29,11 @@ Write unit tests in a `#[cfg(test)]` module in `src/commands/dep.rs`. Use `tempf
 - **`dep` — non-existent source ticket**: call `dep nonexistent B`; assert a `TicketNotFound` error.
 - **Partial ID resolution**: use partial IDs for both arguments; assert the correct tickets are updated.
 - **Frontmatter preserved**: after `dep`, assert all other frontmatter fields and the body are unchanged.
+
+## BDD Integration Tests
+
+```bash
+TICKET_SCRIPT=./target/debug/ticket behave features/ticket_dependencies.feature
+```
+
+The `dep`/`undep` scenarios in `ticket_dependencies.feature` cover: adding a dependency, idempotency, removing a dependency, removing non-existent dependency, and errors for non-existent tickets. The `dep tree` and `dep cycle` scenarios in the same file will fail until tr-pybc and tr-23te are implemented — that's expected while working incrementally.

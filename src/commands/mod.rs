@@ -2,6 +2,7 @@
 
 use crate::error::Result;
 
+#[allow(clippy::too_many_arguments)]
 pub fn create(
     title: &str,
     description: Option<&str>,

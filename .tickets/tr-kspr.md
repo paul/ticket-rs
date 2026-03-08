@@ -1,6 +1,6 @@
 ---
 id: tr-kspr
-status: open
+status: closed
 deps: [tr-9thi, tr-7vfp, tr-n2ln]
 links: []
 created: 2026-03-08T06:29:58Z

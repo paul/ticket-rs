@@ -2,33 +2,8 @@
 
 use crate::error::Result;
 
-#[allow(clippy::too_many_arguments)]
-pub fn create(
-    title: &str,
-    description: Option<&str>,
-    design: Option<&str>,
-    acceptance: Option<&str>,
-    ticket_type: &str,
-    priority: &str,
-    assignee: Option<&str>,
-    external_ref: Option<&str>,
-    parent: Option<&str>,
-    tags: Option<&str>,
-) -> Result<()> {
-    let _ = (
-        description,
-        design,
-        acceptance,
-        ticket_type,
-        priority,
-        assignee,
-        external_ref,
-        parent,
-        tags,
-    );
-    println!("create: not yet implemented (title: {title})");
-    Ok(())
-}
+mod create;
+pub use create::create;
 
 pub fn show(id: &str) -> Result<()> {
     println!("show: not yet implemented (id: {id})");

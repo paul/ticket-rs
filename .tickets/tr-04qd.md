@@ -1,6 +1,6 @@
 ---
 id: tr-04qd
-status: in_progress
+status: closed
 deps: [tr-siyb, tr-kspr]
 links: []
 created: 2026-03-08T06:30:16Z

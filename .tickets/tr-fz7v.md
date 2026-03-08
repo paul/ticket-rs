@@ -1,6 +1,6 @@
 ---
 id: tr-fz7v
-status: open
+status: closed
 deps: [tr-siyb, tr-kspr]
 links: []
 created: 2026-03-08T06:30:25Z

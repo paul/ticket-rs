@@ -18,7 +18,7 @@ fn main() {
     let result = dispatch(cli.command);
 
     if let Err(err) = result {
-        eprintln!("{}: {err}", style("error").red().bold());
+        eprintln!("{}: {err}", style("Error").red().bold());
         process::exit(1);
     }
 }

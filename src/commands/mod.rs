@@ -5,10 +5,8 @@ use crate::error::Result;
 mod create;
 pub use create::create;
 
-pub fn show(id: &str) -> Result<()> {
-    println!("show: not yet implemented (id: {id})");
-    Ok(())
-}
+mod show;
+pub use show::show;
 
 pub fn start(id: &str) -> Result<()> {
     println!("start: not yet implemented (id: {id})");

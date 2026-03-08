@@ -67,7 +67,7 @@ Feature: Ticket Directory Resolution
     Given a ticket exists with ID "task-0001" and title "Main task"
     And a ticket exists with ID "task-0002" and title "Dependency"
     And I am in subdirectory "lib"
-    When I run "ticket dep task-0001 task-0002"
+    When I run "ticket dep add task-0001 task-0002"
     Then the command should succeed
     And the output should contain "Added dependency"
 

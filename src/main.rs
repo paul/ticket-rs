@@ -2,7 +2,7 @@ use clap::Parser;
 use console::style;
 use std::process;
 
-use ticket_rs::cli::{Cli, ColorWhen, Commands};
+use ticket_rs::cli::{Cli, ColorWhen, Commands, DepCommands};
 use ticket_rs::commands;
 
 fn main() {
@@ -55,9 +55,13 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
         Commands::Reopen { id } => commands::reopen(&id),
         Commands::Status { id, status } => commands::status(&id, &status),
 
-        Commands::Dep
-        | Commands::Undep
-        | Commands::Link
+        Commands::Dep { command } => match command {
+            DepCommands::Add { id, dep_id } => commands::dep(&id, &dep_id),
+            DepCommands::Remove { id, dep_id } => commands::dep_remove(&id, &dep_id),
+            DepCommands::Tree { id, full } => commands::dep_tree(&id, full),
+        },
+
+        Commands::Link
         | Commands::Unlink
         | Commands::Ls
         | Commands::Ready

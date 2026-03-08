@@ -105,11 +105,11 @@ pub enum Commands {
     },
 
     // ── Phase 2: dependency & link management ───────────────────────
-    /// Manage ticket dependencies.
-    Dep,
-
-    /// Remove a dependency from a ticket.
-    Undep,
+    /// Manage ticket dependencies (add, remove, tree view).
+    Dep {
+        #[command(subcommand)]
+        command: DepCommands,
+    },
 
     /// Create symmetric links between tickets.
     Link,
@@ -150,4 +150,33 @@ pub enum Commands {
 
     /// Bypass plugin discovery and call a built-in command directly.
     Super,
+}
+
+/// Subcommands for `dep`.
+#[derive(Debug, Subcommand)]
+pub enum DepCommands {
+    /// Add a dependency between two tickets.
+    Add {
+        /// Source ticket ID (supports partial matching).
+        id: String,
+        /// Dependency ticket ID to add (supports partial matching).
+        dep_id: String,
+    },
+
+    /// Remove a dependency from a ticket.
+    Remove {
+        /// Source ticket ID (supports partial matching).
+        id: String,
+        /// Dependency ticket ID to remove (supports partial matching).
+        dep_id: String,
+    },
+
+    /// Display the dependency tree for a ticket.
+    Tree {
+        /// Show all occurrences of each ticket (disable deduplication).
+        #[arg(long)]
+        full: bool,
+        /// Root ticket ID (supports partial matching).
+        id: String,
+    },
 }

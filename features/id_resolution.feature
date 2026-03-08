@@ -59,7 +59,7 @@ Feature: Ticket ID Resolution
   Scenario: ID resolution works with dep command
     Given a ticket exists with ID "dep-aaaa" and title "Main"
     And a ticket exists with ID "dep-bbbb" and title "Dependency"
-    When I run "ticket dep aaaa bbbb"
+    When I run "ticket dep add aaaa bbbb"
     Then the command should succeed
     And ticket "dep-aaaa" should have "bbbb" in deps
 

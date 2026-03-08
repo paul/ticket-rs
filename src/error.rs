@@ -20,6 +20,8 @@ pub enum Error {
     InvalidType { value: String },
     /// An unrecognized priority value was encountered.
     InvalidPriority { value: String },
+    /// A dependency that was expected to exist was not found.
+    DependencyNotFound,
     /// An underlying I/O error.
     Io(std::io::Error),
     /// A YAML parse or serialization error.
@@ -66,6 +68,7 @@ impl fmt::Display for Error {
                     "invalid priority '{value}', valid options: 0, 1, 2, 3, 4"
                 )
             }
+            Error::DependencyNotFound => write!(f, "Dependency not found"),
             Error::Io(err) => write!(f, "{err}"),
             Error::Yaml(err) => write!(f, "{err}"),
         }

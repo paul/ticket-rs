@@ -59,6 +59,7 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             DepCommands::Add { id, dep_id } => commands::dep(&id, &dep_id),
             DepCommands::Remove { id, dep_id } => commands::dep_remove(&id, &dep_id),
             DepCommands::Tree { id, full } => commands::dep_tree(&id, full),
+            DepCommands::Cycle => commands::dep_cycle(),
         },
 
         Commands::Link

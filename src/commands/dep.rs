@@ -349,6 +349,178 @@ fn dep_tree_impl(start_dir: Option<&Path>, partial_id: &str, full: bool) -> Resu
 }
 
 // ---------------------------------------------------------------------------
+// dep cycle implementation
+// ---------------------------------------------------------------------------
+
+/// DFS node color for cycle detection (three-color algorithm).
+#[derive(Clone, PartialEq)]
+enum Color {
+    /// Not yet visited.
+    White,
+    /// Currently on the DFS stack (in-progress).
+    Gray,
+    /// Fully processed.
+    Black,
+}
+
+/// A single detected cycle, ready for display.
+struct Cycle {
+    /// The chain string, e.g. "a -> b -> c -> a".
+    chain: String,
+    /// The IDs of members, in normalized rotation order.
+    members: Vec<String>,
+}
+
+/// Run DFS from `node`, using `color` for three-coloring and `path` to track
+/// the current stack.  All back-edges encountered anywhere in the subtree are
+/// collected into `found` as cycle chain strings.  Traversal continues after
+/// each back-edge so that sibling branches are also explored.
+fn dfs_find_cycles(
+    node: &str,
+    tickets: &HashMap<String, Ticket>,
+    color: &mut HashMap<String, Color>,
+    path: &mut Vec<String>,
+    found: &mut Vec<String>,
+) {
+    // Node not in graph (closed/unknown dep) — treat as fully visited.
+    if !tickets.contains_key(node) {
+        return;
+    }
+
+    match color.get(node).cloned().unwrap_or(Color::White) {
+        // Already fully processed — no new cycles reachable here.
+        Color::Black => return,
+        // Back edge — record the cycle and return without recursing further
+        // (the cycle members are already on the stack; recursing would only
+        // find the same cycle again or loop forever).
+        Color::Gray => {
+            let start_pos = path.iter().position(|id| id == node).unwrap_or(0);
+            let cycle_nodes: Vec<&str> = path[start_pos..].iter().map(String::as_str).collect();
+            let mut chain = cycle_nodes.join(" -> ");
+            chain.push_str(&format!(" -> {node}"));
+            found.push(chain);
+            return;
+        }
+        Color::White => {}
+    }
+
+    // Mark gray and push onto path.
+    color.insert(node.to_string(), Color::Gray);
+    path.push(node.to_string());
+
+    let deps: Vec<String> = tickets
+        .get(node)
+        .map(|t| t.deps.clone())
+        .unwrap_or_default();
+
+    // Visit every dependency — do not break early so all back-edges are found.
+    for dep in &deps {
+        dfs_find_cycles(dep, tickets, color, path, found);
+    }
+
+    // Pop from path and mark black (fully processed).
+    path.pop();
+    color.insert(node.to_string(), Color::Black);
+}
+
+/// Normalize a cycle chain so that the node with the lexicographically smallest
+/// ID comes first.  Returns the normalized member IDs (without the repeated
+/// tail) used for deduplication.
+fn normalize_cycle(chain: &str) -> Vec<String> {
+    // The chain is "a -> b -> c -> a"; split on " -> " to get members including
+    // the repeated tail.
+    let parts: Vec<&str> = chain.split(" -> ").collect();
+    // The last element is a duplicate of the first, so the unique members are
+    // everything except the last part.
+    let n = parts.len() - 1;
+    if n == 0 {
+        return vec![];
+    }
+    let members: Vec<&str> = parts[..n].to_vec();
+
+    // Find the position of the lexicographically smallest ID.
+    let min_pos = members
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, id)| *id)
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    // Rotate so smallest ID is first.
+    members[min_pos..]
+        .iter()
+        .chain(members[..min_pos].iter())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Build and return the cycle detection output string and whether any cycles
+/// were found.
+fn dep_cycle_impl(start_dir: Option<&Path>) -> Result<(String, bool)> {
+    let store = TicketStore::find(start_dir)?;
+
+    // Load only open and in_progress tickets.
+    let tickets: HashMap<String, Ticket> = store
+        .list_tickets()
+        .into_iter()
+        .filter(|t| {
+            matches!(
+                t.status,
+                crate::ticket::Status::Open | crate::ticket::Status::InProgress
+            )
+        })
+        .map(|t| (t.id.clone(), t))
+        .collect();
+
+    let mut color: HashMap<String, Color> = HashMap::new();
+    let mut seen_cycles: HashSet<String> = HashSet::new();
+    let mut cycles: Vec<Cycle> = Vec::new();
+
+    // Sort node IDs for deterministic traversal order.
+    let mut node_ids: Vec<String> = tickets.keys().cloned().collect();
+    node_ids.sort();
+
+    for id in &node_ids {
+        if color.get(id).cloned().unwrap_or(Color::White) == Color::White {
+            let mut path: Vec<String> = Vec::new();
+            let mut raw_cycles: Vec<String> = Vec::new();
+            dfs_find_cycles(id, &tickets, &mut color, &mut path, &mut raw_cycles);
+            for chain in raw_cycles {
+                let members = normalize_cycle(&chain);
+                // Use sorted, comma-joined members as dedup key.
+                let key = {
+                    let mut sorted = members.clone();
+                    sorted.sort();
+                    sorted.join(",")
+                };
+                if !seen_cycles.contains(&key) {
+                    seen_cycles.insert(key);
+                    cycles.push(Cycle { chain, members });
+                }
+            }
+        }
+    }
+
+    if cycles.is_empty() {
+        return Ok(("No dependency cycles found".to_string(), false));
+    }
+
+    // Build the output string.
+    let mut parts: Vec<String> = Vec::new();
+    for (i, cycle) in cycles.iter().enumerate() {
+        let mut block = format!("Cycle {}: {}", i + 1, cycle.chain);
+        for member_id in &cycle.members {
+            if let Some(t) = tickets.get(member_id) {
+                block.push_str(&format!("\n  {:<8} [{}] {}", member_id, t.status, t.title));
+            }
+        }
+        parts.push(block);
+    }
+
+    Ok((parts.join("\n\n"), true))
+}
+
+// ---------------------------------------------------------------------------
 // Public entry points
 // ---------------------------------------------------------------------------
 
@@ -367,6 +539,17 @@ pub fn dep_remove(id: &str, dep_id: &str) -> Result<()> {
 pub fn dep_tree(id: &str, full: bool) -> Result<()> {
     let output = dep_tree_impl(None, id, full)?;
     println!("{output}");
+    Ok(())
+}
+
+/// Run cycle detection and print the result.  Exits with code 1 if cycles are
+/// found, or 0 if the graph is clean.
+pub fn dep_cycle() -> Result<()> {
+    let (output, has_cycles) = dep_cycle_impl(None)?;
+    println!("{output}");
+    if has_cycles {
+        std::process::exit(1);
+    }
     Ok(())
 }
 
@@ -395,12 +578,22 @@ mod tests {
         title: &str,
         deps: &[&str],
     ) -> TicketStore {
+        make_store_with_ticket_status(dir, id, title, "open", deps)
+    }
+
+    fn make_store_with_ticket_status(
+        dir: &Path,
+        id: &str,
+        title: &str,
+        status: &str,
+        deps: &[&str],
+    ) -> TicketStore {
         let tickets_dir = dir.join(".tickets");
         fs::create_dir_all(&tickets_dir).unwrap();
 
         let deps_str = deps.join(", ");
         let content = format!(
-            "---\nid: {id}\nstatus: open\ndeps: [{deps_str}]\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\nassignee: Test User\ntags: [phase-2]\n---\n# {title}\n\nBody text.\n"
+            "---\nid: {id}\nstatus: {status}\ndeps: [{deps_str}]\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\nassignee: Test User\ntags: [phase-2]\n---\n# {title}\n\nBody text.\n"
         );
         fs::write(tickets_dir.join(format!("{id}.md")), &content).unwrap();
 
@@ -808,6 +1001,266 @@ mod tests {
         assert!(
             matches!(err, Error::TicketNotFound { .. }),
             "expected TicketNotFound, got {err:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — no cycles exits clean
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_no_cycles() {
+        let tmp = tempdir().unwrap();
+        make_store_with_ticket(tmp.path(), "task-0001", &["task-0002"]);
+        make_store_with_ticket(tmp.path(), "task-0002", &["task-0003"]);
+        make_store_with_ticket(tmp.path(), "task-0003", &[]);
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(!has_cycles, "expected no cycles; output:\n{output}");
+        assert_eq!(output, "No dependency cycles found");
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — simple two-node cycle A → B → A
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_two_node() {
+        let tmp = tempdir().unwrap();
+        make_store_with_ticket(tmp.path(), "task-0001", &["task-0002"]);
+        make_store_with_ticket(tmp.path(), "task-0002", &["task-0001"]);
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(has_cycles, "expected a cycle; output:\n{output}");
+        assert!(
+            output.contains("task-0001"),
+            "missing task-0001; output:\n{output}"
+        );
+        assert!(
+            output.contains("task-0002"),
+            "missing task-0002; output:\n{output}"
+        );
+        // Only one cycle should be reported.
+        assert_eq!(
+            output.matches("Cycle ").count(),
+            1,
+            "expected exactly one cycle block; output:\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — three-node cycle A → B → C → A
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_three_node() {
+        let tmp = tempdir().unwrap();
+        make_store_with_ticket(tmp.path(), "task-0001", &["task-0002"]);
+        make_store_with_ticket(tmp.path(), "task-0002", &["task-0003"]);
+        make_store_with_ticket(tmp.path(), "task-0003", &["task-0001"]);
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(has_cycles, "expected a cycle; output:\n{output}");
+        assert!(
+            output.contains("task-0001"),
+            "missing task-0001; output:\n{output}"
+        );
+        assert!(
+            output.contains("task-0002"),
+            "missing task-0002; output:\n{output}"
+        );
+        assert!(
+            output.contains("task-0003"),
+            "missing task-0003; output:\n{output}"
+        );
+        assert_eq!(
+            output.matches("Cycle ").count(),
+            1,
+            "expected exactly one cycle block; output:\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — multiple independent cycles A↔B and C↔D
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_multiple_independent() {
+        let tmp = tempdir().unwrap();
+        make_store_with_ticket(tmp.path(), "task-0001", &["task-0002"]);
+        make_store_with_ticket(tmp.path(), "task-0002", &["task-0001"]);
+        make_store_with_ticket(tmp.path(), "task-0003", &["task-0004"]);
+        make_store_with_ticket(tmp.path(), "task-0004", &["task-0003"]);
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(has_cycles, "expected cycles; output:\n{output}");
+        assert_eq!(
+            output.matches("Cycle ").count(),
+            2,
+            "expected exactly two cycle blocks; output:\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — cycle normalization: same cycle deduplicated regardless of
+    // which node the DFS starts from
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_normalization_deduplicates() {
+        let tmp = tempdir().unwrap();
+        // A → B → C → A — single cycle regardless of traversal start.
+        make_store_with_ticket(tmp.path(), "task-0001", &["task-0002"]);
+        make_store_with_ticket(tmp.path(), "task-0002", &["task-0003"]);
+        make_store_with_ticket(tmp.path(), "task-0003", &["task-0001"]);
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(has_cycles, "expected a cycle; output:\n{output}");
+        // Regardless of which node was the DFS entry point, only one cycle
+        // block should appear.
+        assert_eq!(
+            output.matches("Cycle ").count(),
+            1,
+            "expected exactly one cycle block (dedup); output:\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — closed tickets are skipped
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_closed_tickets_skipped() {
+        let tmp = tempdir().unwrap();
+        make_store_with_ticket_status(tmp.path(), "task-0001", "A ticket", "open", &["task-0002"]);
+        // task-0002 is closed, so the cycle A→B→A should not be detected.
+        make_store_with_ticket_status(
+            tmp.path(),
+            "task-0002",
+            "A ticket",
+            "closed",
+            &["task-0001"],
+        );
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(
+            !has_cycles,
+            "expected no cycles (closed ticket skipped); output:\n{output}"
+        );
+        assert_eq!(output, "No dependency cycles found");
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — in_progress tickets are included
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_in_progress_included() {
+        let tmp = tempdir().unwrap();
+        make_store_with_ticket_status(
+            tmp.path(),
+            "task-0001",
+            "A ticket",
+            "in_progress",
+            &["task-0002"],
+        );
+        make_store_with_ticket_status(tmp.path(), "task-0002", "A ticket", "open", &["task-0001"]);
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(
+            has_cycles,
+            "expected cycle with in_progress ticket; output:\n{output}"
+        );
+        assert!(
+            output.contains("task-0001"),
+            "missing task-0001; output:\n{output}"
+        );
+        assert!(
+            output.contains("task-0002"),
+            "missing task-0002; output:\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — non-cyclic dep chain A → B → C
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_linear_chain_no_cycle() {
+        let tmp = tempdir().unwrap();
+        make_store_with_ticket(tmp.path(), "task-0001", &["task-0002"]);
+        make_store_with_ticket(tmp.path(), "task-0002", &["task-0003"]);
+        make_store_with_ticket(tmp.path(), "task-0003", &[]);
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(!has_cycles, "expected no cycles; output:\n{output}");
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — overlapping cycles sharing a node (A->B->A and A->C->A)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_overlapping_shared_node() {
+        let tmp = tempdir().unwrap();
+        // A -> B -> A  and  A -> C -> A share node A.
+        make_store_with_ticket(tmp.path(), "task-0001", &["task-0002", "task-0003"]);
+        make_store_with_ticket(tmp.path(), "task-0002", &["task-0001"]);
+        make_store_with_ticket(tmp.path(), "task-0003", &["task-0001"]);
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(has_cycles, "expected cycles; output:\n{output}");
+        assert_eq!(
+            output.matches("Cycle ").count(),
+            2,
+            "expected two cycles (both A-B-A and A-C-A); output:\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // dep cycle — output format
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cycle_output_format() {
+        let tmp = tempdir().unwrap();
+        make_store_with_ticket_status(
+            tmp.path(),
+            "task-0001",
+            "First task",
+            "open",
+            &["task-0002"],
+        );
+        make_store_with_ticket_status(
+            tmp.path(),
+            "task-0002",
+            "Second task",
+            "open",
+            &["task-0001"],
+        );
+
+        let (output, has_cycles) = dep_cycle_impl(Some(tmp.path())).unwrap();
+        assert!(has_cycles, "expected a cycle; output:\n{output}");
+
+        // The chain line must use " -> " arrows.
+        assert!(
+            output.contains(" -> "),
+            "expected arrow notation in chain; output:\n{output}"
+        );
+        // The chain must end with the start node (closing the loop).
+        let first_line = output.lines().next().unwrap_or("");
+        assert!(
+            first_line.starts_with("Cycle 1: "),
+            "first line should start with 'Cycle 1: '; output:\n{output}"
+        );
+        // Member lines must show [status] and title.
+        assert!(
+            output.contains("[open]"),
+            "expected [open] status in member lines; output:\n{output}"
+        );
+        assert!(
+            output.contains("First task") || output.contains("Second task"),
+            "expected ticket title in member lines; output:\n{output}"
         );
     }
 }

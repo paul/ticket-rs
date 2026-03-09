@@ -179,4 +179,7 @@ pub enum DepCommands {
         /// Root ticket ID (supports partial matching).
         id: String,
     },
+
+    /// Detect dependency cycles among open and in-progress tickets.
+    Cycle,
 }

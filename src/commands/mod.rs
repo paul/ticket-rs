@@ -4,7 +4,7 @@ mod create;
 pub use create::create;
 
 mod dep;
-pub use dep::{dep, dep_remove, dep_tree};
+pub use dep::{dep, dep_cycle, dep_remove, dep_tree};
 
 mod show;
 pub use show::show;

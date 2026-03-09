@@ -1,6 +1,6 @@
 ---
 id: tr-hs04
-status: open
+status: closed
 deps: [tr-siyb]
 links: []
 created: 2026-03-08T06:32:32Z

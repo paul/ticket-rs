@@ -4,6 +4,7 @@ use std::process;
 
 use ticket_rs::cli::{Cli, ColorWhen, Commands, DepCommands};
 use ticket_rs::commands;
+use ticket_rs::plugin;
 
 fn main() {
     let cli = Cli::parse();
@@ -121,9 +122,33 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
 
         Commands::Tree { id, max_depth, all } => commands::tree(id.as_deref(), max_depth, all),
 
-        Commands::Super => {
-            eprintln!("not yet implemented");
-            process::exit(1);
+        Commands::Super { args } => {
+            // Re-parse the trailing args as a top-level command, bypassing any
+            // future plugin lookup. Prepend the binary name so clap sees a full
+            // argv.
+            let mut full_args = vec![std::ffi::OsString::from("ticket")];
+            full_args.extend(args);
+            let inner = Cli::try_parse_from(full_args).unwrap_or_else(|e| e.exit());
+            dispatch(inner.command)?;
+            Ok(())
+        }
+
+        Commands::External(args) => {
+            // Extract the subcommand name (first element) and remaining args.
+            let cmd = args[0].to_string_lossy();
+            match plugin::find_plugin(&cmd) {
+                Some(path) => {
+                    plugin::exec_plugin(&path, &args[1..]);
+                    Ok(()) // unreachable: exec_plugin exits the process
+                }
+                None => {
+                    eprintln!(
+                        "{}: unknown command '{cmd}'",
+                        console::style("Error").red().bold()
+                    );
+                    process::exit(1);
+                }
+            }
         }
     }
 }

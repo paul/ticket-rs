@@ -1,5 +1,7 @@
 // CLI argument definitions using clap derive.
 
+use std::ffi::OsString;
+
 use clap::{Parser, Subcommand, ValueEnum};
 
 /// When to use colored output.
@@ -274,7 +276,17 @@ pub enum Commands {
     },
 
     /// Bypass plugin discovery and call a built-in command directly.
-    Super,
+    #[command(trailing_var_arg = true)]
+    Super {
+        /// Built-in command name and its arguments.
+        #[arg(required = true, num_args = 1..)]
+        args: Vec<std::ffi::OsString>,
+    },
+
+    /// An unknown subcommand — dispatched to an external plugin if one is
+    /// found on `PATH`.
+    #[command(external_subcommand)]
+    External(Vec<OsString>),
 }
 
 /// Subcommands for `dep`.

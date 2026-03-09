@@ -185,7 +185,13 @@ pub enum Commands {
     Update,
 
     /// Append a timestamped note to a ticket.
-    AddNote,
+    AddNote {
+        /// Ticket ID (supports partial matching).
+        id: String,
+
+        /// Note text. If omitted, reads from stdin.
+        text: Option<String>,
+    },
 
     // ── Phase 5: display commands ───────────────────────────────────
     /// Display parent/child hierarchy tree.

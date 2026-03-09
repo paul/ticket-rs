@@ -83,12 +83,9 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             tag,
         } => commands::closed(limit, assignee.as_deref(), tag.as_deref()),
 
-        Commands::Update
-        | Commands::AddNote
-        | Commands::Tree
-        | Commands::Query
-        | Commands::Edit
-        | Commands::Super => {
+        Commands::AddNote { id, text } => commands::add_note(&id, text.as_deref()),
+
+        Commands::Update | Commands::Tree | Commands::Query | Commands::Edit | Commands::Super => {
             eprintln!("not yet implemented");
             process::exit(1);
         }

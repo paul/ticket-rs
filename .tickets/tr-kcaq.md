@@ -1,6 +1,6 @@
 ---
 id: tr-kcaq
-status: open
+status: closed
 deps: [tr-kspr]
 links: []
 created: 2026-03-08T06:31:48Z

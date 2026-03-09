@@ -15,5 +15,8 @@ pub use show::show;
 mod list;
 pub use list::{blocked, closed, ls, ready};
 
+mod note;
+pub use note::add_note;
+
 mod status;
 pub use status::{close, reopen, start, status};

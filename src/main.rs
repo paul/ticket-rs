@@ -4,6 +4,7 @@ use std::process;
 
 use ticket_rs::cli::{Cli, ColorWhen, Commands, DepCommands};
 use ticket_rs::commands;
+use ticket_rs::pager;
 use ticket_rs::plugin;
 
 fn main() {
@@ -14,6 +15,10 @@ fn main() {
         ColorWhen::Always => console::set_colors_enabled(true),
         ColorWhen::Never => console::set_colors_enabled(false),
         ColorWhen::Auto => {} // defer to console's TTY + NO_COLOR/CLICOLOR detection
+    }
+
+    if cli.no_pager {
+        pager::set_pager_disabled(true);
     }
 
     let result = dispatch(cli.command);

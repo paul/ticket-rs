@@ -17,6 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::error::{Error, Result};
+use crate::pager;
 use crate::store::TicketStore;
 use crate::ticket::Ticket;
 
@@ -538,8 +539,7 @@ pub fn dep_remove(id: &str, dep_id: &str) -> Result<()> {
 
 pub fn dep_tree(id: &str, full: bool) -> Result<()> {
     let output = dep_tree_impl(None, id, full)?;
-    println!("{output}");
-    Ok(())
+    pager::page_or_print(&format!("{output}\n"))
 }
 
 /// Run cycle detection and print the result.  Exits with code 1 if cycles are

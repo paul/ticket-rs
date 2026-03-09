@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::error::Result;
+use crate::pager;
 use crate::store::TicketStore;
 use crate::ticket::{Status, Ticket};
 
@@ -14,8 +15,7 @@ use crate::ticket::{Status, Ticket};
 /// List tickets, optionally filtered by status, assignee, and/or tag.
 pub fn ls(status: Option<&str>, assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
     let output = ls_impl(None, status, assignee, tag)?;
-    print!("{output}");
-    Ok(())
+    pager::page_or_print(&output)
 }
 
 // ---------------------------------------------------------------------------
@@ -111,8 +111,7 @@ fn format_line(ticket: &Ticket) -> String {
 /// Show tickets that are ready to work on (open or in-progress, all deps closed).
 pub fn ready(assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
     let output = ready_impl(None, assignee, tag)?;
-    print!("{output}");
-    Ok(())
+    pager::page_or_print(&output)
 }
 
 // ---------------------------------------------------------------------------
@@ -216,8 +215,7 @@ fn format_ready_line(ticket: &Ticket) -> String {
 /// Show tickets that are blocked by at least one unclosed dependency.
 pub fn blocked(assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
     let output = blocked_impl(None, assignee, tag)?;
-    print!("{output}");
-    Ok(())
+    pager::page_or_print(&output)
 }
 
 // ---------------------------------------------------------------------------
@@ -341,8 +339,7 @@ fn format_blocked_line(ticket: &Ticket, by_id: &HashMap<&str, &Ticket>) -> Strin
 /// Show recently closed tickets sorted by file modification time (most recent first).
 pub fn closed(limit: usize, assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
     let output = closed_impl(None, limit, assignee, tag)?;
-    print!("{output}");
-    Ok(())
+    pager::page_or_print(&output)
 }
 
 // ---------------------------------------------------------------------------

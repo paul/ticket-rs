@@ -25,6 +25,7 @@ use std::path::Path;
 use console::style;
 
 use crate::error::{Error, Result};
+use crate::pager;
 use crate::store::TicketStore;
 use crate::ticket::{Status, Ticket};
 
@@ -306,8 +307,7 @@ pub fn tree(
     include_closed: bool,
 ) -> Result<()> {
     let output = tree_impl(None, partial_id, max_depth, include_closed)?;
-    println!("{output}");
-    Ok(())
+    pager::page_or_print(&format!("{output}\n"))
 }
 
 // ---------------------------------------------------------------------------

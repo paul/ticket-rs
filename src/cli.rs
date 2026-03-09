@@ -24,6 +24,10 @@ pub struct Cli {
     #[arg(long, value_enum, default_value_t, global = true)]
     pub color: ColorWhen,
 
+    /// Disable the pager and print output directly to stdout.
+    #[arg(long, global = true)]
+    pub no_pager: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }

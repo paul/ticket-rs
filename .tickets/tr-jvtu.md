@@ -1,6 +1,6 @@
 ---
 id: tr-jvtu
-status: open
+status: closed
 deps: [tr-pfsb]
 links: []
 created: 2026-03-09T23:37:08Z
@@ -28,10 +28,12 @@ Manual shell-out is the right approach: simple, no new dependencies, matches use
 
 ## Implementation
 
-Extract the pager helper from `src/commands/show.rs` into a shared `src/pager.rs` module. Commands call `pager::page_output(&text)` instead of `print!()`.
+Extracted the pager helper from `src/commands/show.rs` into `src/pager.rs`. Commands call `pager::page_or_print(&text)` instead of `print!()`. The global `PAGER_DISABLED` atomic flag (set via `pager::set_pager_disabled(true)`) follows the same pattern as `console::set_colors_enabled`.
 
-Commands to consider for paging (large output): `ls`/`list`, `tree`, `dep tree`, `dep cycle`, `query`.
+Commands updated: `show`, `ls`/`list`, `ready`, `blocked`, `closed`, `tree`, `dep tree`.
+
+`query` was excluded — it outputs JSONL intended for piping to `jq` and other tools; paging would break that pipeline. `dep cycle` was also excluded — it is a short diagnostic command that exits non-zero when cycles are found.
 
 ## CLI flags
 
-Add `--pager` / `--no-pager` global flags to `Cli` in `src/cli.rs` (analogous to `--color`). `--no-pager` disables paging regardless of TTY or env vars. `--pager` forces paging even when stdout is not a TTY (useful for testing).
+Only `--no-pager` was added (not `--pager`). Git only has `--no-pager` and there is no practical use case for forcing paging on a non-TTY pipe. `--no-pager` disables paging regardless of TTY state or env vars.

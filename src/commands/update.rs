@@ -165,7 +165,7 @@ fn update_impl(
 
     let new_type: Option<TicketType> = match ticket_type {
         None => None,
-        Some(s) => Some(parse_ticket_type(s)?),
+        Some(s) => Some(s.parse::<TicketType>()?),
     };
 
     // --- Apply frontmatter mutations ----------------------------------------
@@ -488,23 +488,6 @@ pub fn apply_tag_ops(
     } else {
         // No tag operation requested.
         existing
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn parse_ticket_type(s: &str) -> Result<TicketType> {
-    match s {
-        "bug" => Ok(TicketType::Bug),
-        "feature" => Ok(TicketType::Feature),
-        "task" => Ok(TicketType::Task),
-        "epic" => Ok(TicketType::Epic),
-        "chore" => Ok(TicketType::Chore),
-        other => Err(Error::InvalidType {
-            value: other.to_string(),
-        }),
     }
 }
 
@@ -950,9 +933,7 @@ mod tests {
     #[test]
     fn update_tags_replace_all_integration() {
         let tmp = tempdir().unwrap();
-        let content = format!(
-            "---\nid: t-0001\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\ntags: [a, b]\n---\n# T\n"
-        );
+        let content = "---\nid: t-0001\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\ntags: [a, b]\n---\n# T\n".to_string();
         write_ticket(tmp.path(), "t-0001", &content);
         run_update(
             tmp.path(),
@@ -985,9 +966,7 @@ mod tests {
     #[test]
     fn update_add_tags_merges_deduped_integration() {
         let tmp = tempdir().unwrap();
-        let content = format!(
-            "---\nid: t-0001\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\ntags: [a, b]\n---\n# T\n"
-        );
+        let content = "---\nid: t-0001\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\ntags: [a, b]\n---\n# T\n".to_string();
         write_ticket(tmp.path(), "t-0001", &content);
         run_update(
             tmp.path(),
@@ -1016,9 +995,7 @@ mod tests {
     #[test]
     fn update_remove_tags_removes_specific_integration() {
         let tmp = tempdir().unwrap();
-        let content = format!(
-            "---\nid: t-0001\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\ntags: [a, b, c]\n---\n# T\n"
-        );
+        let content = "---\nid: t-0001\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\ntags: [a, b, c]\n---\n# T\n".to_string();
         write_ticket(tmp.path(), "t-0001", &content);
         run_update(
             tmp.path(),
@@ -1047,9 +1024,7 @@ mod tests {
     #[test]
     fn update_remove_tags_deletes_field_when_empty_integration() {
         let tmp = tempdir().unwrap();
-        let content = format!(
-            "---\nid: t-0001\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\ntags: [only]\n---\n# T\n"
-        );
+        let content = "---\nid: t-0001\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\ntags: [only]\n---\n# T\n".to_string();
         write_ticket(tmp.path(), "t-0001", &content);
         run_update(
             tmp.path(),

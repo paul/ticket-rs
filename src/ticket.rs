@@ -65,6 +65,23 @@ impl fmt::Display for TicketType {
     }
 }
 
+impl std::str::FromStr for TicketType {
+    type Err = crate::error::Error;
+
+    fn from_str(s: &str) -> crate::error::Result<Self> {
+        match s {
+            "bug" => Ok(TicketType::Bug),
+            "feature" => Ok(TicketType::Feature),
+            "task" => Ok(TicketType::Task),
+            "epic" => Ok(TicketType::Epic),
+            "chore" => Ok(TicketType::Chore),
+            other => Err(crate::error::Error::InvalidType {
+                value: other.to_string(),
+            }),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Frontmatter (deserialization only)
 // ---------------------------------------------------------------------------

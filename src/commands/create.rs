@@ -92,7 +92,7 @@ fn create_impl(
 ) -> Result<String> {
     // --- Parse and validate inputs ------------------------------------------
 
-    let ticket_type = parse_ticket_type(ticket_type)?;
+    let ticket_type = ticket_type.parse::<TicketType>()?;
     let priority = parse_priority(priority)?;
     let tags = parse_tags(tags);
 
@@ -171,19 +171,6 @@ fn create_impl(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn parse_ticket_type(s: &str) -> Result<TicketType> {
-    match s {
-        "bug" => Ok(TicketType::Bug),
-        "feature" => Ok(TicketType::Feature),
-        "task" => Ok(TicketType::Task),
-        "epic" => Ok(TicketType::Epic),
-        "chore" => Ok(TicketType::Chore),
-        other => Err(Error::InvalidType {
-            value: other.to_string(),
-        }),
-    }
-}
-
 fn parse_priority(s: &str) -> Result<u8> {
     let n: u8 = s.parse().map_err(|_| Error::InvalidPriority {
         value: s.to_string(),
@@ -203,11 +190,7 @@ fn parse_tags(s: Option<&str>) -> Option<Vec<String>> {
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
         .collect();
-    if tags.is_empty() {
-        None
-    } else {
-        Some(tags)
-    }
+    if tags.is_empty() { None } else { Some(tags) }
 }
 
 /// Build the markdown body for a new ticket.

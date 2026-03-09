@@ -1,6 +1,6 @@
 ---
 id: tr-aaqe
-status: in_progress
+status: closed
 deps: [tr-kspr]
 links: []
 created: 2026-03-08T06:30:51Z

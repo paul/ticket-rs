@@ -203,7 +203,11 @@ fn parse_tags(s: Option<&str>) -> Option<Vec<String>> {
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
         .collect();
-    if tags.is_empty() { None } else { Some(tags) }
+    if tags.is_empty() {
+        None
+    } else {
+        Some(tags)
+    }
 }
 
 /// Build the markdown body for a new ticket.
@@ -268,6 +272,7 @@ mod tests {
     /// Calls create_impl with the given start_dir (which should be the root of
     /// a temp directory). Returns the generated ID and leaves the .tickets/
     /// directory in place for inspection.
+    #[allow(clippy::too_many_arguments)]
     fn run_create(
         root: &TempDir,
         title: &str,

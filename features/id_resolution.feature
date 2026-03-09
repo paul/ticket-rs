@@ -35,7 +35,7 @@ Feature: Ticket ID Resolution
     And a ticket exists with ID "abc-5678" and title "Second ticket"
     When I run "ticket show abc"
     Then the command should fail
-    And the output should contain "Error: ambiguous ID 'abc' matches multiple tickets"
+    And the output should contain "Error: ambiguous id 'abc', matches:"
 
   Scenario: Non-existent ID error
     When I run "ticket show nonexistent"

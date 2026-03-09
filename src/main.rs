@@ -87,7 +87,37 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
 
         Commands::Edit { id } => commands::edit(&id),
 
-        Commands::Update | Commands::Tree | Commands::Query | Commands::Super => {
+        Commands::Update {
+            id,
+            title,
+            description,
+            design,
+            acceptance,
+            priority,
+            ticket_type,
+            assignee,
+            external_ref,
+            parent,
+            tags,
+            add_tags,
+            remove_tags,
+        } => commands::update(
+            &id,
+            title.as_deref(),
+            description.as_deref(),
+            design.as_deref(),
+            acceptance.as_deref(),
+            priority.as_deref(),
+            ticket_type.as_deref(),
+            assignee.as_deref(),
+            external_ref.as_deref(),
+            parent.as_deref(),
+            tags.as_deref(),
+            add_tags.as_deref(),
+            remove_tags.as_deref(),
+        ),
+
+        Commands::Tree | Commands::Query | Commands::Super => {
             eprintln!("not yet implemented");
             process::exit(1);
         }

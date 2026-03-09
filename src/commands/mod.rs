@@ -23,3 +23,6 @@ pub use status::{close, reopen, start, status};
 
 mod edit;
 pub use edit::edit;
+
+mod update;
+pub use update::update;

@@ -1,6 +1,6 @@
 ---
 id: tr-gyw0
-status: open
+status: closed
 deps: [tr-kspr]
 links: []
 created: 2026-03-08T06:32:00Z
@@ -47,3 +47,15 @@ TICKET_SCRIPT=./target/debug/ticket behave features/
 ```
 
 Pay particular attention to `ticket_show.feature` and `ticket_listing.feature`, which rely on correct field values after mutations.
+
+## Notes
+
+**2026-03-09T21:11:17Z**
+
+Implemented update command across src/cli.rs, src/commands/update.rs (new), src/commands/mod.rs, and src/main.rs.
+
+Pure string-manipulation helpers (update_title, replace_description, replace_section, apply_tag_ops) are factored out and tested independently without filesystem access. Section insertion follows canonical order: Design < Acceptance Criteria < Notes. Tag operations support replace-all, merge-deduped, and subtract modes; --tags is mutually exclusive with --add-tags/--remove-tags via clap conflicts_with_all.
+
+After initial review, three issues were addressed: (1) mutual exclusivity tests added using clap::Parser::try_parse_from to exercise the CLI layer for both --tags/--add-tags and --tags/--remove-tags conflicts; (2) unmodified_fields_preserved test strengthened to byte-identical comparison via assert_eq! rather than substring checks; (3) stdout test added by refactoring the public update() to delegate to update_with_writer(&mut dyn Write), enabling a Vec<u8> capture in tests.
+
+217 unit tests pass. No BDD regressions in the feature files that exercise field mutations.

@@ -182,7 +182,58 @@ pub enum Commands {
 
     // ── Phase 4: update & notes ─────────────────────────────────────
     /// Modify a ticket's fields.
-    Update,
+    Update {
+        /// Ticket ID (supports partial matching).
+        id: String,
+
+        /// New title (replaces the # heading).
+        #[arg(long)]
+        title: Option<String>,
+
+        /// New description (replaces text between title and first ## heading).
+        #[arg(short, long)]
+        description: Option<String>,
+
+        /// New ## Design section content (replaces or inserts the section).
+        #[arg(long)]
+        design: Option<String>,
+
+        /// New ## Acceptance Criteria section content (replaces or inserts the section).
+        #[arg(long)]
+        acceptance: Option<String>,
+
+        /// New priority (0-4).
+        #[arg(short, long)]
+        priority: Option<String>,
+
+        /// New ticket type (bug, feature, task, epic, chore).
+        #[arg(short = 't', long = "type")]
+        ticket_type: Option<String>,
+
+        /// New assignee name.
+        #[arg(short, long)]
+        assignee: Option<String>,
+
+        /// New external reference (e.g. GitHub issue URL).
+        #[arg(long)]
+        external_ref: Option<String>,
+
+        /// New parent ticket ID (validated to exist).
+        #[arg(long)]
+        parent: Option<String>,
+
+        /// Replace all tags with this comma-separated list.
+        #[arg(long, conflicts_with_all = ["add_tags", "remove_tags"])]
+        tags: Option<String>,
+
+        /// Merge these comma-separated tags (deduplicated).
+        #[arg(long, conflicts_with = "tags")]
+        add_tags: Option<String>,
+
+        /// Remove these comma-separated tags (delete field if result is empty).
+        #[arg(long, conflicts_with = "tags")]
+        remove_tags: Option<String>,
+    },
 
     /// Append a timestamped note to a ticket.
     AddNote {

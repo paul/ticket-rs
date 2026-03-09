@@ -20,3 +20,6 @@ pub use note::add_note;
 
 mod status;
 pub use status::{close, reopen, start, status};
+
+mod edit;
+pub use edit::edit;

@@ -202,7 +202,10 @@ pub enum Commands {
 
     // ── Phase 6: plugin & advanced ──────────────────────────────────
     /// Open a ticket in $EDITOR.
-    Edit,
+    Edit {
+        /// Ticket ID (supports partial matching).
+        id: String,
+    },
 
     /// Bypass plugin discovery and call a built-in command directly.
     Super,

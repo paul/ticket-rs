@@ -24,6 +24,8 @@ pub enum Error {
     DependencyNotFound,
     /// A link that was expected to exist was not found.
     LinkNotFound,
+    /// The editor process exited with a non-zero status code.
+    EditorError { editor: String, code: Option<i32> },
     /// An underlying I/O error.
     Io(std::io::Error),
     /// A YAML parse or serialization error.
@@ -72,6 +74,10 @@ impl fmt::Display for Error {
             }
             Error::DependencyNotFound => write!(f, "Dependency not found"),
             Error::LinkNotFound => write!(f, "Link not found"),
+            Error::EditorError { editor, code } => match code {
+                Some(n) => write!(f, "editor '{editor}' exited with status {n}"),
+                None => write!(f, "editor '{editor}' was terminated by a signal"),
+            },
             Error::Io(err) => write!(f, "{err}"),
             Error::Yaml(err) => write!(f, "{err}"),
         }

@@ -62,9 +62,10 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             DepCommands::Cycle => commands::dep_cycle(),
         },
 
-        Commands::Link
-        | Commands::Unlink
-        | Commands::Ls
+        Commands::Link { ids } => commands::link(&ids),
+        Commands::Unlink { id, target_id } => commands::unlink(&id, &target_id),
+
+        Commands::Ls
         | Commands::Ready
         | Commands::Blocked
         | Commands::Closed

@@ -22,6 +22,8 @@ pub enum Error {
     InvalidPriority { value: String },
     /// A dependency that was expected to exist was not found.
     DependencyNotFound,
+    /// A link that was expected to exist was not found.
+    LinkNotFound,
     /// An underlying I/O error.
     Io(std::io::Error),
     /// A YAML parse or serialization error.
@@ -69,6 +71,7 @@ impl fmt::Display for Error {
                 )
             }
             Error::DependencyNotFound => write!(f, "Dependency not found"),
+            Error::LinkNotFound => write!(f, "Link not found"),
             Error::Io(err) => write!(f, "{err}"),
             Error::Yaml(err) => write!(f, "{err}"),
         }

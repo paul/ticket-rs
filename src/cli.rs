@@ -112,10 +112,19 @@ pub enum Commands {
     },
 
     /// Create symmetric links between tickets.
-    Link,
+    Link {
+        /// Ticket IDs to link together (2 or more, supports partial matching).
+        #[arg(required = true, num_args = 2..)]
+        ids: Vec<String>,
+    },
 
     /// Remove a symmetric link between tickets.
-    Unlink,
+    Unlink {
+        /// Source ticket ID (supports partial matching).
+        id: String,
+        /// Target ticket ID to unlink (supports partial matching).
+        target_id: String,
+    },
 
     // ── Phase 3: listing & querying ─────────────────────────────────
     /// List tickets with optional filters.

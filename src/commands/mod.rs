@@ -13,7 +13,7 @@ mod show;
 pub use show::show;
 
 mod list;
-pub use list::{blocked, ls, ready};
+pub use list::{blocked, closed, ls, ready};
 
 mod status;
 pub use status::{close, reopen, start, status};

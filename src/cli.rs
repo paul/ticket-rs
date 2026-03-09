@@ -166,7 +166,19 @@ pub enum Commands {
     },
 
     /// Show recently closed tickets.
-    Closed,
+    Closed {
+        /// Maximum number of tickets to show (default 20).
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+
+        /// Filter by assignee name.
+        #[arg(short = 'a', long)]
+        assignee: Option<String>,
+
+        /// Filter by tag.
+        #[arg(short = 'T', long)]
+        tag: Option<String>,
+    },
 
     // ── Phase 4: update & notes ─────────────────────────────────────
     /// Modify a ticket's fields.

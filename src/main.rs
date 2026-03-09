@@ -77,8 +77,13 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             commands::blocked(assignee.as_deref(), tag.as_deref())
         }
 
-        Commands::Closed
-        | Commands::Update
+        Commands::Closed {
+            limit,
+            assignee,
+            tag,
+        } => commands::closed(limit, assignee.as_deref(), tag.as_deref()),
+
+        Commands::Update
         | Commands::AddNote
         | Commands::Tree
         | Commands::Query

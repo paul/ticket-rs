@@ -335,6 +335,96 @@ fn format_blocked_line(ticket: &Ticket, by_id: &HashMap<&str, &Ticket>) -> Strin
 }
 
 // ---------------------------------------------------------------------------
+// closed — public entry point
+// ---------------------------------------------------------------------------
+
+/// Show recently closed tickets sorted by file modification time (most recent first).
+pub fn closed(limit: usize, assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
+    let output = closed_impl(None, limit, assignee, tag)?;
+    print!("{output}");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Internal implementation (testable via explicit start_dir)
+// ---------------------------------------------------------------------------
+
+/// Core logic for `closed`.
+///
+/// `start_dir` is passed to `TicketStore::find`; `None` uses the cwd.
+/// Returns the full formatted output string (empty when no tickets match).
+fn closed_impl(
+    start_dir: Option<&Path>,
+    limit: usize,
+    assignee: Option<&str>,
+    tag: Option<&str>,
+) -> Result<String> {
+    let store = TicketStore::find(start_dir)?;
+    // Retrieve paths sorted by mtime (most recent first) and read only
+    // as many as needed for efficiency.
+    let paths = store.paths_by_mtime();
+    let output = format_closed_from_paths(&paths, limit, assignee, tag);
+    Ok(output)
+}
+
+/// Filter closed tickets from a mtime-sorted path list, apply filters, and
+/// format the output.
+///
+/// Only inspects the first `limit` files (by mtime) for efficiency, then
+/// filters by status, assignee, and tag within that bounded candidate set.
+///
+/// Extracted so unit tests can call it directly.
+pub(crate) fn format_closed_from_paths(
+    paths: &[std::path::PathBuf],
+    limit: usize,
+    assignee: Option<&str>,
+    tag: Option<&str>,
+) -> String {
+    let results: Vec<String> = paths
+        .iter()
+        .take(limit)
+        .filter_map(|path| {
+            let content = std::fs::read_to_string(path).ok()?;
+            let ticket = crate::ticket::Ticket::read_from_str(&content).ok()?;
+            if ticket.status != crate::ticket::Status::Closed {
+                return None;
+            }
+            // Optional assignee filter.
+            if let Some(a) = assignee
+                && ticket.assignee.as_deref() != Some(a)
+            {
+                return None;
+            }
+            // Optional tag filter.
+            if let Some(tag_val) = tag {
+                let has_tag = ticket
+                    .tags
+                    .as_ref()
+                    .map(|tags| tags.iter().any(|t| t == tag_val))
+                    .unwrap_or(false);
+                if !has_tag {
+                    return None;
+                }
+            }
+            Some(format_closed_line(&ticket))
+        })
+        .collect();
+
+    if results.is_empty() {
+        return String::new();
+    }
+
+    results.join("\n") + "\n"
+}
+
+/// Format a single closed ticket as a display line.
+///
+/// Format: `{id:<12}  [closed] - {title}`
+fn format_closed_line(ticket: &crate::ticket::Ticket) -> String {
+    format!("{:<12}  [closed] - {}", ticket.id, ticket.title)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1042,6 +1132,323 @@ mod tests {
         assert!(
             output.is_empty(),
             "expected empty output when no tickets are blocked\n{output}"
+        );
+    }
+
+    // =======================================================================
+    // closed command tests
+    // =======================================================================
+
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    /// Write a ticket file with given status to a temp tickets dir; return its path.
+    fn write_closed_ticket_file(
+        tickets_dir: &std::path::Path,
+        id: &str,
+        status: Status,
+        title: &str,
+        assignee: Option<&str>,
+        tags: Option<&[&str]>,
+    ) -> PathBuf {
+        let assignee_line = assignee
+            .map(|a| format!("\nassignee: {a}"))
+            .unwrap_or_default();
+        let tags_line = tags
+            .map(|ts| {
+                let joined = ts.join(", ");
+                format!("\ntags: [{joined}]")
+            })
+            .unwrap_or_default();
+        let content = format!(
+            "---\nid: {id}\nstatus: {status}\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2{assignee_line}{tags_line}\n---\n# {title}\n",
+        );
+        let path = tickets_dir.join(format!("{id}.md"));
+        std::fs::write(&path, &content).unwrap();
+        path
+    }
+
+    fn make_tickets_dir(root: &TempDir) -> std::path::PathBuf {
+        let dir = root.path().join(".tickets");
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // -----------------------------------------------------------------------
+    // Shows closed tickets
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn closed_shows_closed_ticket() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = make_tickets_dir(&root);
+        write_closed_ticket_file(
+            &tickets_dir,
+            "cl-0001",
+            Status::Closed,
+            "A closed ticket",
+            None,
+            None,
+        );
+        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        assert!(
+            output.contains("cl-0001"),
+            "expected closed ticket id in output\n{output}"
+        );
+        assert!(
+            output.contains("[closed]"),
+            "expected '[closed]' in output\n{output}"
+        );
+        assert!(
+            output.contains("A closed ticket"),
+            "expected title in output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Excludes open tickets
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn closed_excludes_open_tickets() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = make_tickets_dir(&root);
+        write_closed_ticket_file(
+            &tickets_dir,
+            "op-0001",
+            Status::Open,
+            "An open ticket",
+            None,
+            None,
+        );
+        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        assert!(
+            !output.contains("op-0001"),
+            "expected open ticket to be excluded\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Output format
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn closed_output_format() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = make_tickets_dir(&root);
+        write_closed_ticket_file(
+            &tickets_dir,
+            "fmt-0001",
+            Status::Closed,
+            "Format ticket",
+            None,
+            None,
+        );
+        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        let line = output.trim_end_matches('\n');
+        assert!(
+            line.starts_with("fmt-0001"),
+            "expected line to start with id\n{line}"
+        );
+        assert!(
+            line.contains("[closed]"),
+            "expected '[closed]' in line\n{line}"
+        );
+        assert!(
+            line.contains("- Format ticket"),
+            "expected '- Format ticket' in line\n{line}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // --limit respected
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn closed_limit_respected() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = make_tickets_dir(&root);
+        for i in 1..=3 {
+            write_closed_ticket_file(
+                &tickets_dir,
+                &format!("lim-{i:04}"),
+                Status::Closed,
+                &format!("Ticket {i}"),
+                None,
+                None,
+            );
+        }
+        let output = closed_impl(Some(root.path()), 1, None, None).unwrap();
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "expected exactly 1 line with --limit=1\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Default limit of 20
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn closed_default_limit_is_20() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = make_tickets_dir(&root);
+        for i in 1..=25 {
+            write_closed_ticket_file(
+                &tickets_dir,
+                &format!("def-{i:04}"),
+                Status::Closed,
+                &format!("Ticket {i}"),
+                None,
+                None,
+            );
+        }
+        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        let lines: Vec<&str> = output.lines().collect();
+        assert!(
+            lines.len() <= 20,
+            "expected at most 20 lines with default limit, got {}\n{output}",
+            lines.len()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Sorted by mtime (most recent first)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn closed_sorted_by_mtime_most_recent_first() {
+        use filetime::FileTime;
+
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = make_tickets_dir(&root);
+
+        let path_older = write_closed_ticket_file(
+            &tickets_dir,
+            "mtime-older",
+            Status::Closed,
+            "Older ticket",
+            None,
+            None,
+        );
+        let path_newer = write_closed_ticket_file(
+            &tickets_dir,
+            "mtime-newer",
+            Status::Closed,
+            "Newer ticket",
+            None,
+            None,
+        );
+
+        // Set older file to a time in the past, newer file to a more recent time.
+        filetime::set_file_mtime(&path_older, FileTime::from_unix_time(1000, 0)).unwrap();
+        filetime::set_file_mtime(&path_newer, FileTime::from_unix_time(2000, 0)).unwrap();
+
+        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 2, "expected 2 lines\n{output}");
+        assert!(
+            lines[0].contains("mtime-newer"),
+            "expected newer ticket first\n{output}"
+        );
+        assert!(
+            lines[1].contains("mtime-older"),
+            "expected older ticket second\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // -a assignee filter
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn closed_assignee_filter() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = make_tickets_dir(&root);
+        write_closed_ticket_file(
+            &tickets_dir,
+            "cl-alice",
+            Status::Closed,
+            "Alice ticket",
+            Some("Alice"),
+            None,
+        );
+        write_closed_ticket_file(
+            &tickets_dir,
+            "cl-bob",
+            Status::Closed,
+            "Bob ticket",
+            Some("Bob"),
+            None,
+        );
+        let output = closed_impl(Some(root.path()), 20, Some("Alice"), None).unwrap();
+        assert!(
+            output.contains("cl-alice"),
+            "expected Alice's ticket\n{output}"
+        );
+        assert!(
+            !output.contains("cl-bob"),
+            "expected Bob's ticket excluded\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // -T tag filter
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn closed_tag_filter() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = make_tickets_dir(&root);
+        write_closed_ticket_file(
+            &tickets_dir,
+            "cl-back",
+            Status::Closed,
+            "Backend ticket",
+            None,
+            Some(&["backend"]),
+        );
+        write_closed_ticket_file(
+            &tickets_dir,
+            "cl-front",
+            Status::Closed,
+            "Frontend ticket",
+            None,
+            Some(&["frontend"]),
+        );
+        let output = closed_impl(Some(root.path()), 20, None, Some("backend")).unwrap();
+        assert!(
+            output.contains("cl-back"),
+            "expected backend ticket\n{output}"
+        );
+        assert!(
+            !output.contains("cl-front"),
+            "expected frontend ticket excluded\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Empty output when no closed tickets
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn closed_empty_output_when_no_closed_tickets() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = make_tickets_dir(&root);
+        write_closed_ticket_file(
+            &tickets_dir,
+            "op-only",
+            Status::Open,
+            "Open ticket",
+            None,
+            None,
+        );
+        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        assert!(
+            output.is_empty(),
+            "expected empty output when no closed tickets\n{output}"
         );
     }
 }

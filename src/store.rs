@@ -146,6 +146,37 @@ impl TicketStore {
             .collect()
     }
 
+    /// Return ticket file paths sorted by modification time (most recent first).
+    ///
+    /// Files that cannot be stat'd are placed at the end of the list.
+    pub fn paths_by_mtime(&self) -> Vec<PathBuf> {
+        use std::time::SystemTime;
+
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return Vec::new();
+        };
+
+        let mut paths_with_mtime: Vec<(PathBuf, SystemTime)> = entries
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.extension()?.to_str()? != "md" {
+                    return None;
+                }
+                let mtime = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+                Some((path, mtime))
+            })
+            .collect();
+
+        // Sort most-recent first.
+        paths_with_mtime.sort_by(|a, b| b.1.cmp(&a.1));
+        paths_with_mtime.into_iter().map(|(p, _)| p).collect()
+    }
+
     // -----------------------------------------------------------------------
     // ID resolution
     // -----------------------------------------------------------------------

@@ -1,6 +1,6 @@
 ---
 id: tr-b3ex
-status: open
+status: closed
 deps: [tr-kspr]
 links: []
 created: 2026-03-08T06:32:21Z
@@ -41,3 +41,13 @@ TICKET_SCRIPT=./target/debug/ticket behave features/
 ```
 
 The dep-tree analogue (`ticket_dependencies.feature`) is a useful structural reference for the box-drawing character format, even though it walks `deps` rather than `parent`.
+
+## Notes
+
+**`--no-color` approach**: The ticket spec lists `--no-color` as an option, but the existing pattern in this codebase is a global `--color` flag (Auto/Always/Never) that handles `NO_COLOR` env var and TTY detection via the `console` crate (see `src/cli.rs` and `src/main.rs`). Following that pattern, no separate `--no-color` flag is added to the tree subcommand. Users use `--color never` or set `NO_COLOR` in the environment.
+
+**Implementation notes** (divergences from ticket spec resolved against `~/Code/dotfiles/opencode/.local/bin/ticket-tree` reference):
+
+- Cycle line includes full node text (dimmed id + colored status + title) before `[cycle]`, matching the original's `format_node` output rather than bare `id [cycle]`.
+- Forest mode falls back to all visible tickets (sorted by status, created, id) when no natural roots exist (pure-cycle graphs), matching `ticket-tree:353-357`. Ancestor-path cycle detection handles re-entries safely.
+- Sort uses three keys: status priority, created ascending, id ascending — matching `ticket-tree:121-123`'s `sort -k1,1n -k2,2 -k3,3`.

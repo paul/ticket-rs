@@ -246,7 +246,19 @@ pub enum Commands {
 
     // ── Phase 5: display commands ───────────────────────────────────
     /// Display parent/child hierarchy tree.
-    Tree,
+    Tree {
+        /// Ticket ID to use as the subtree root (supports partial matching).
+        /// If omitted, shows all root tickets.
+        id: Option<String>,
+
+        /// Limit display depth (0 = root only, 1 = one level, …).
+        #[arg(short = 'L', long)]
+        max_depth: Option<usize>,
+
+        /// Include closed tickets (default: open and in_progress only).
+        #[arg(long)]
+        all: bool,
+    },
 
     /// Serialize tickets to JSON (with optional jq filter).
     Query {

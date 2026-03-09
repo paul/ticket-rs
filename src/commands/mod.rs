@@ -27,5 +27,8 @@ pub use edit::edit;
 mod query;
 pub use query::query;
 
+mod tree;
+pub use tree::tree;
+
 mod update;
 pub use update::update;

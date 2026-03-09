@@ -119,7 +119,9 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
 
         Commands::Query { filter } => commands::query(filter.as_deref()),
 
-        Commands::Tree | Commands::Super => {
+        Commands::Tree { id, max_depth, all } => commands::tree(id.as_deref(), max_depth, all),
+
+        Commands::Super => {
             eprintln!("not yet implemented");
             process::exit(1);
         }

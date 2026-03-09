@@ -155,7 +155,15 @@ pub enum Commands {
     },
 
     /// Show tickets blocked by unclosed dependencies.
-    Blocked,
+    Blocked {
+        /// Filter by assignee name.
+        #[arg(short = 'a', long)]
+        assignee: Option<String>,
+
+        /// Filter by tag.
+        #[arg(short = 'T', long)]
+        tag: Option<String>,
+    },
 
     /// Show recently closed tickets.
     Closed,

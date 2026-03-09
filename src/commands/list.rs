@@ -210,6 +210,131 @@ fn format_ready_line(ticket: &Ticket) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// blocked — public entry point
+// ---------------------------------------------------------------------------
+
+/// Show tickets that are blocked by at least one unclosed dependency.
+pub fn blocked(assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
+    let output = blocked_impl(None, assignee, tag)?;
+    print!("{output}");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Internal implementation (testable via explicit start_dir)
+// ---------------------------------------------------------------------------
+
+/// Core logic for `blocked`.
+///
+/// `start_dir` is passed to `TicketStore::find`; `None` uses the cwd.
+/// Returns the full formatted output string (empty when no tickets match).
+fn blocked_impl(
+    start_dir: Option<&Path>,
+    assignee: Option<&str>,
+    tag: Option<&str>,
+) -> Result<String> {
+    let store = TicketStore::find(start_dir)?;
+    let tickets = store.list_tickets();
+    let output = format_blocked(&tickets, assignee, tag);
+    Ok(output)
+}
+
+/// Filter to blocked tickets, sort, and format into the output string.
+///
+/// A ticket is "blocked" when:
+///   - Its status is `open` or `in_progress` (not closed).
+///   - At least one ID in its `deps` list resolves to a ticket whose status is
+///     NOT `closed`, or the dep ID cannot be found in the store at all.
+///
+/// Extracted so that unit tests can call it directly with in-memory ticket
+/// slices without touching the filesystem.
+pub(crate) fn format_blocked(
+    tickets: &[Ticket],
+    assignee: Option<&str>,
+    tag: Option<&str>,
+) -> String {
+    // Build a lookup map so dependency checks are O(1).
+    let by_id: HashMap<&str, &Ticket> = tickets.iter().map(|t| (t.id.as_str(), t)).collect();
+
+    let mut filtered: Vec<&Ticket> = tickets
+        .iter()
+        .filter(|t| {
+            // Exclude closed tickets.
+            if t.status == Status::Closed {
+                return false;
+            }
+            // Must have at least one unclosed (or unresolvable) dependency.
+            if t.deps.is_empty() {
+                return false;
+            }
+            let has_unclosed_dep = t.deps.iter().any(|dep_id| {
+                !matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed)
+            });
+            if !has_unclosed_dep {
+                return false;
+            }
+            // Optional assignee filter.
+            if let Some(a) = assignee
+                && t.assignee.as_deref() != Some(a)
+            {
+                return false;
+            }
+            // Optional tag filter.
+            if let Some(tag_val) = tag {
+                let has_tag = t
+                    .tags
+                    .as_ref()
+                    .map(|tags| tags.iter().any(|tg| tg == tag_val))
+                    .unwrap_or(false);
+                if !has_tag {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    // Sort by priority ascending, then by ID ascending.
+    filtered.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.id.cmp(&b.id)));
+
+    let lines: Vec<String> = filtered
+        .iter()
+        .map(|t| format_blocked_line(t, &by_id))
+        .collect();
+
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    lines.join("\n") + "\n"
+}
+
+/// Format a single ticket as a blocked-list display line.
+///
+/// Format: `{id:<12}  [P{priority}][{status}] - {title}  <- [{unclosed_deps}]`
+///
+/// Only the unclosed (or unresolvable) dependency IDs appear in the suffix.
+fn format_blocked_line(ticket: &Ticket, by_id: &HashMap<&str, &Ticket>) -> String {
+    let open_deps: Vec<&str> = ticket
+        .deps
+        .iter()
+        .filter(
+            |dep_id| !matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed),
+        )
+        .map(|s| s.as_str())
+        .collect();
+
+    format!(
+        "{:<12}  [P{}][{}] - {}  <- [{}]",
+        ticket.id,
+        ticket.priority,
+        ticket.status,
+        ticket.title,
+        open_deps.join(", ")
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -592,8 +717,7 @@ mod tests {
         let line = output.trim_end_matches('\n');
         // Assert exact line shape: "{id:<12}  [P{priority}][{status}] - {title}"
         assert_eq!(
-            line,
-            "ready-001     [P2][open] - Priority ticket",
+            line, "ready-001     [P2][open] - Priority ticket",
             "output line did not match expected format"
         );
     }
@@ -685,6 +809,239 @@ mod tests {
         assert!(
             output.is_empty(),
             "expected empty output when no tickets are ready\n{output}"
+        );
+    }
+
+    // =======================================================================
+    // blocked command tests
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // Ticket with any unclosed dep is blocked
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_ticket_with_unclosed_dep_appears() {
+        let tickets = vec![
+            with_deps(make_ticket("block-001", "Blocked ticket"), &["block-002"]),
+            make_ticket("block-002", "Blocker ticket"), // status defaults to open
+        ];
+        let output = format_blocked(&tickets, None, None);
+        assert!(
+            output.contains("block-001"),
+            "expected blocked ticket in output\n{output}"
+        );
+        assert!(
+            output.contains("<- [block-002]"),
+            "expected blocker dep in output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Ticket with all deps closed is not blocked
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_ticket_with_all_deps_closed_excluded() {
+        let tickets = vec![
+            with_deps(make_ticket("block-001", "Unblocked ticket"), &["block-002"]),
+            with_status(make_ticket("block-002", "Closed blocker"), Status::Closed),
+        ];
+        let output = format_blocked(&tickets, None, None);
+        assert!(
+            !output.contains("block-001"),
+            "expected ticket with all closed deps to be excluded\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Ticket with no deps is not blocked
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_ticket_with_no_deps_excluded() {
+        let tickets = vec![make_ticket("block-001", "No deps ticket")];
+        let output = format_blocked(&tickets, None, None);
+        assert!(
+            !output.contains("block-001"),
+            "expected ticket with no deps to be excluded from blocked output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Closed ticket is not blocked
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_closed_ticket_excluded() {
+        let tickets = vec![
+            with_status(
+                with_deps(make_ticket("block-001", "Closed blocked"), &["block-002"]),
+                Status::Closed,
+            ),
+            make_ticket("block-002", "Open blocker"),
+        ];
+        let output = format_blocked(&tickets, None, None);
+        assert!(
+            !output.contains("block-001"),
+            "expected closed ticket to be excluded from blocked output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Only unclosed deps shown in output
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_only_unclosed_deps_shown() {
+        let tickets = vec![
+            with_deps(
+                make_ticket("block-001", "Blocked ticket"),
+                &["block-002", "block-003"],
+            ),
+            make_ticket("block-002", "Open blocker"),
+            with_status(make_ticket("block-003", "Closed blocker"), Status::Closed),
+        ];
+        let output = format_blocked(&tickets, None, None);
+        assert!(
+            output.contains("<- [block-002]"),
+            "expected only open dep in output\n{output}"
+        );
+        assert!(
+            !output.contains("block-003"),
+            "expected closed dep excluded from output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Priority badge format
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_priority_badge_format() {
+        let tickets = vec![
+            with_deps(make_ticket("block-001", "Blocked ticket"), &["block-002"]),
+            make_ticket("block-002", "Blocker"),
+        ];
+        let output = format_blocked(&tickets, None, None);
+        let line = output.trim_end_matches('\n');
+        assert_eq!(
+            line, "block-001     [P2][open] - Blocked ticket  <- [block-002]",
+            "output line did not match expected format"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Sort by priority then ID
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_sort_by_priority_then_id() {
+        let dep = with_status(make_ticket("dep", "Dep"), Status::Open);
+        let tickets = vec![
+            with_deps(with_priority(make_ticket("c", "Low priority"), 3), &["dep"]),
+            with_deps(
+                with_priority(make_ticket("b", "Also high priority"), 1),
+                &["dep"],
+            ),
+            with_deps(
+                with_priority(make_ticket("a", "High priority"), 1),
+                &["dep"],
+            ),
+            dep,
+        ];
+        let output = format_blocked(&tickets, None, None);
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 3, "expected 3 blocked lines\n{output}");
+        assert!(
+            lines[0].starts_with("a"),
+            "expected 'a' first (priority 1, id a)\n{output}"
+        );
+        assert!(
+            lines[1].starts_with("b"),
+            "expected 'b' second (priority 1, id b)\n{output}"
+        );
+        assert!(
+            lines[2].starts_with("c"),
+            "expected 'c' third (priority 3)\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // -a/--assignee filter
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_assignee_filter() {
+        let tickets = vec![
+            with_assignee(
+                with_deps(make_ticket("block-001", "Alice blocked"), &["dep"]),
+                "Alice",
+            ),
+            with_assignee(
+                with_deps(make_ticket("block-002", "Bob blocked"), &["dep"]),
+                "Bob",
+            ),
+            make_ticket("dep", "Open dep"),
+        ];
+        let output = format_blocked(&tickets, Some("Alice"), None);
+        assert!(
+            output.contains("block-001"),
+            "expected Alice's ticket in blocked output\n{output}"
+        );
+        assert!(
+            !output.contains("block-002"),
+            "expected Bob's ticket excluded from blocked output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // -T/--tag filter
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_tag_filter() {
+        let tickets = vec![
+            with_tags(
+                with_deps(make_ticket("block-001", "Backend blocked"), &["dep"]),
+                &["backend"],
+            ),
+            with_tags(
+                with_deps(make_ticket("block-002", "Frontend blocked"), &["dep"]),
+                &["frontend"],
+            ),
+            make_ticket("dep", "Open dep"),
+        ];
+        let output = format_blocked(&tickets, None, Some("backend"));
+        assert!(
+            output.contains("block-001"),
+            "expected backend ticket in blocked output\n{output}"
+        );
+        assert!(
+            !output.contains("block-002"),
+            "expected frontend ticket excluded from blocked output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Empty output when no tickets are blocked
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blocked_empty_output_when_none_blocked() {
+        let tickets = vec![
+            make_ticket("tr-0001", "No deps"),
+            with_status(make_ticket("tr-0002", "Closed"), Status::Closed),
+            with_deps(
+                make_ticket("tr-0003", "All deps closed"),
+                &["tr-closed-dep"],
+            ),
+            with_status(make_ticket("tr-closed-dep", "Closed dep"), Status::Closed),
+        ];
+        let output = format_blocked(&tickets, None, None);
+        assert!(
+            output.is_empty(),
+            "expected empty output when no tickets are blocked\n{output}"
         );
     }
 }

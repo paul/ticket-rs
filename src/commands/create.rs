@@ -203,11 +203,7 @@ fn parse_tags(s: Option<&str>) -> Option<Vec<String>> {
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
         .collect();
-    if tags.is_empty() {
-        None
-    } else {
-        Some(tags)
-    }
+    if tags.is_empty() { None } else { Some(tags) }
 }
 
 /// Build the markdown body for a new ticket.

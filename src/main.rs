@@ -71,8 +71,9 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             tag,
         } => commands::ls(status.as_deref(), assignee.as_deref(), tag.as_deref()),
 
-        Commands::Ready
-        | Commands::Blocked
+        Commands::Ready { assignee, tag } => commands::ready(assignee.as_deref(), tag.as_deref()),
+
+        Commands::Blocked
         | Commands::Closed
         | Commands::Update
         | Commands::AddNote

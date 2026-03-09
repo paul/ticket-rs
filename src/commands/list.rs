@@ -1,5 +1,6 @@
-// Implementation of the `ls` / `list` subcommand.
+// Implementation of the `ls` / `list` and `ready` subcommands.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::error::Result;
@@ -54,15 +55,15 @@ pub(crate) fn format_list(
     let mut filtered: Vec<&Ticket> = tickets
         .iter()
         .filter(|t| {
-            if let Some(ref s) = status_filter {
-                if &t.status != s {
-                    return false;
-                }
+            if let Some(ref s) = status_filter
+                && &t.status != s
+            {
+                return false;
             }
-            if let Some(a) = assignee {
-                if t.assignee.as_deref() != Some(a) {
-                    return false;
-                }
+            if let Some(a) = assignee
+                && t.assignee.as_deref() != Some(a)
+            {
+                return false;
             }
             if let Some(tag_val) = tag {
                 let has_tag = t
@@ -101,6 +102,111 @@ fn format_line(ticket: &Ticket) -> String {
         line.push_str(&format!("  <- [{}]", ticket.deps.join(", ")));
     }
     line
+}
+
+// ---------------------------------------------------------------------------
+// ready — public entry point
+// ---------------------------------------------------------------------------
+
+/// Show tickets that are ready to work on (open or in-progress, all deps closed).
+pub fn ready(assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
+    let output = ready_impl(None, assignee, tag)?;
+    print!("{output}");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Internal implementation (testable via explicit start_dir)
+// ---------------------------------------------------------------------------
+
+/// Core logic for `ready`.
+///
+/// `start_dir` is passed to `TicketStore::find`; `None` uses the cwd.
+/// Returns the full formatted output string (empty when no tickets match).
+fn ready_impl(
+    start_dir: Option<&Path>,
+    assignee: Option<&str>,
+    tag: Option<&str>,
+) -> Result<String> {
+    let store = TicketStore::find(start_dir)?;
+    let tickets = store.list_tickets();
+    let output = format_ready(&tickets, assignee, tag);
+    Ok(output)
+}
+
+/// Filter to ready tickets, sort, and format into the output string.
+///
+/// A ticket is "ready" when:
+///   - Its status is `open` or `in_progress` (not closed).
+///   - Every ID in its `deps` list resolves to a ticket whose status is `closed`.
+///     If a dep ID is not found in the store at all, the ticket is treated as blocked.
+///
+/// Extracted so that unit tests can call it directly with in-memory ticket
+/// slices without touching the filesystem.
+pub(crate) fn format_ready(
+    tickets: &[Ticket],
+    assignee: Option<&str>,
+    tag: Option<&str>,
+) -> String {
+    // Build a lookup map so dependency checks are O(1).
+    let by_id: HashMap<&str, &Ticket> = tickets.iter().map(|t| (t.id.as_str(), t)).collect();
+
+    let mut filtered: Vec<&Ticket> = tickets
+        .iter()
+        .filter(|t| {
+            // Exclude closed tickets.
+            if t.status == Status::Closed {
+                return false;
+            }
+            // Exclude tickets with any unclosed (or unresolvable) dependency.
+            if !t
+                .deps
+                .iter()
+                .all(|dep_id| matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed))
+            {
+                return false;
+            }
+            // Optional assignee filter.
+            if let Some(a) = assignee
+                && t.assignee.as_deref() != Some(a)
+            {
+                return false;
+            }
+            // Optional tag filter.
+            if let Some(tag_val) = tag {
+                let has_tag = t
+                    .tags
+                    .as_ref()
+                    .map(|tags| tags.iter().any(|tg| tg == tag_val))
+                    .unwrap_or(false);
+                if !has_tag {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    // Sort by priority ascending, then by ID ascending.
+    filtered.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.id.cmp(&b.id)));
+
+    let lines: Vec<String> = filtered.iter().map(|t| format_ready_line(t)).collect();
+
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    lines.join("\n") + "\n"
+}
+
+/// Format a single ticket as a ready-list display line.
+///
+/// Format: `{id:<12}  [P{priority}][{status}] - {title}`
+fn format_ready_line(ticket: &Ticket) -> String {
+    format!(
+        "{:<12}  [P{}][{}] - {}",
+        ticket.id, ticket.priority, ticket.status, ticket.title
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -384,5 +490,201 @@ mod tests {
                 "expected Ls variant for subcommand '{sub}'"
             );
         }
+    }
+
+    // =======================================================================
+    // ready command tests
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // Ticket with no deps is ready
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_ticket_with_no_deps_is_ready() {
+        let tickets = vec![make_ticket("tr-0001", "No deps ticket")];
+        let output = format_ready(&tickets, None, None);
+        assert!(
+            output.contains("tr-0001"),
+            "expected ticket with no deps to appear in ready output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Ticket with all deps closed is ready
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_ticket_with_all_deps_closed_is_ready() {
+        let tickets = vec![
+            with_deps(make_ticket("tr-0001", "Main ticket"), &["tr-dep"]),
+            with_status(make_ticket("tr-dep", "Closed dep"), Status::Closed),
+        ];
+        let output = format_ready(&tickets, None, None);
+        assert!(
+            output.contains("tr-0001"),
+            "expected ticket with all closed deps to appear in ready output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Ticket with any unclosed dep is not ready
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_ticket_with_unclosed_dep_is_not_ready() {
+        let tickets = vec![
+            with_deps(make_ticket("tr-0001", "Blocked ticket"), &["tr-dep"]),
+            make_ticket("tr-dep", "Open dep"), // status defaults to open
+        ];
+        let output = format_ready(&tickets, None, None);
+        assert!(
+            !output.contains("tr-0001"),
+            "expected ticket with open dep to be excluded from ready output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Closed ticket is not ready
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_closed_ticket_is_not_ready() {
+        let tickets = vec![with_status(
+            make_ticket("tr-0001", "Closed ticket"),
+            Status::Closed,
+        )];
+        let output = format_ready(&tickets, None, None);
+        assert!(
+            !output.contains("tr-0001"),
+            "expected closed ticket to be excluded from ready output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // in_progress ticket with all deps closed is ready
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_in_progress_ticket_with_closed_deps_is_ready() {
+        let tickets = vec![
+            with_status(
+                with_deps(make_ticket("tr-0001", "In progress ticket"), &["tr-dep"]),
+                Status::InProgress,
+            ),
+            with_status(make_ticket("tr-dep", "Closed dep"), Status::Closed),
+        ];
+        let output = format_ready(&tickets, None, None);
+        assert!(
+            output.contains("tr-0001"),
+            "expected in_progress ticket with closed deps to appear in ready output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Priority badge format
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_priority_badge_format() {
+        let tickets = vec![make_ticket("ready-001", "Priority ticket")]; // priority defaults to 2
+        let output = format_ready(&tickets, None, None);
+        let line = output.trim_end_matches('\n');
+        // Assert exact line shape: "{id:<12}  [P{priority}][{status}] - {title}"
+        assert_eq!(
+            line,
+            "ready-001     [P2][open] - Priority ticket",
+            "output line did not match expected format"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Sort by priority then ID
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_sort_by_priority_then_id() {
+        let tickets = vec![
+            with_priority(make_ticket("c", "Low priority"), 3),
+            with_priority(make_ticket("b", "Also high priority"), 1),
+            with_priority(make_ticket("a", "High priority"), 1),
+        ];
+        let output = format_ready(&tickets, None, None);
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 3, "expected 3 lines\n{output}");
+        assert!(
+            lines[0].starts_with("a"),
+            "expected 'a' first (priority 1, id a)\n{output}"
+        );
+        assert!(
+            lines[1].starts_with("b"),
+            "expected 'b' second (priority 1, id b)\n{output}"
+        );
+        assert!(
+            lines[2].starts_with("c"),
+            "expected 'c' third (priority 3)\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // -a/--assignee filter
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_assignee_filter() {
+        let tickets = vec![
+            with_assignee(make_ticket("tr-0001", "Alice ticket"), "Alice"),
+            with_assignee(make_ticket("tr-0002", "Bob ticket"), "Bob"),
+        ];
+        let output = format_ready(&tickets, Some("Alice"), None);
+        assert!(
+            output.contains("tr-0001"),
+            "expected Alice's ticket in ready output\n{output}"
+        );
+        assert!(
+            !output.contains("tr-0002"),
+            "expected Bob's ticket excluded from ready output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // -T/--tag filter
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_tag_filter() {
+        let tickets = vec![
+            with_tags(
+                make_ticket("tr-0001", "Backend ticket"),
+                &["backend", "api"],
+            ),
+            with_tags(make_ticket("tr-0002", "Frontend ticket"), &["frontend"]),
+        ];
+        let output = format_ready(&tickets, None, Some("backend"));
+        assert!(
+            output.contains("tr-0001"),
+            "expected backend ticket in ready output\n{output}"
+        );
+        assert!(
+            !output.contains("tr-0002"),
+            "expected frontend ticket excluded from ready output\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Empty output when no tickets are ready
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ready_empty_output_when_no_tickets_ready() {
+        let tickets = vec![
+            with_status(make_ticket("tr-0001", "Closed A"), Status::Closed),
+            with_status(make_ticket("tr-0002", "Closed B"), Status::Closed),
+        ];
+        let output = format_ready(&tickets, None, None);
+        assert!(
+            output.is_empty(),
+            "expected empty output when no tickets are ready\n{output}"
+        );
     }
 }

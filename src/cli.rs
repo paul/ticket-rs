@@ -144,7 +144,15 @@ pub enum Commands {
     },
 
     /// Show tickets that are ready to work on (all deps closed).
-    Ready,
+    Ready {
+        /// Filter by assignee name.
+        #[arg(short = 'a', long)]
+        assignee: Option<String>,
+
+        /// Filter by tag.
+        #[arg(short = 'T', long)]
+        tag: Option<String>,
+    },
 
     /// Show tickets blocked by unclosed dependencies.
     Blocked,

@@ -1,6 +1,6 @@
 ---
 id: tr-yrdk
-status: open
+status: closed
 deps: [tr-fz7v]
 links: []
 created: 2026-03-08T06:32:43Z
@@ -25,3 +25,15 @@ TICKET_SCRIPT=./target/debug/ticket behave features/ticket_show.feature
 ```
 
 Validate highlighting visually by running `./target/debug/ticket show <id>` in a TTY with a real ticket.
+
+## Notes
+
+**2026-03-09T23:05:26Z**
+
+Diverged from the original spec: dropped syntect in favor of shelling out to bat.
+
+The ticket called for syntect with as_24_bit_terminal_escaped(), which hard-codes RGB values from a bundled theme. After seeing the output, the 24-bit theme colors looked garish compared to the existing tk show output (which pipes through bat). The goal was for highlighting to feel native to the user's terminal color scheme.
+
+syntect cannot emit standard 16-color ANSI codes — all of its themes map tokens to specific RGB values. bat ships an 'ansi' theme (--theme=ansi) that emits standard ANSI color codes instead, which map to whatever the user has configured in their terminal, producing the same subdued look as the existing bat-based output.
+
+Implementation: highlight.rs shells out to bat with --plain --no-pager --color=always --theme=ansi. The frontmatter and body are split at the --- delimiter and piped to two separate bat invocations (--language=yaml and --language=md respectively). Falls back to plain text gracefully if bat is not on PATH or colors are disabled. syntect was removed from Cargo.toml entirely.

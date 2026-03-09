@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use crate::error::Result;
+use crate::highlight;
 use crate::store::TicketStore;
 use crate::ticket::{Status, Ticket};
 
@@ -13,7 +14,7 @@ use crate::ticket::{Status, Ticket};
 /// Display a ticket's full content, including dynamically computed sections.
 pub fn show(id: &str) -> Result<()> {
     let output = show_impl(None, id)?;
-    print!("{output}");
+    print!("{}", highlight::highlight(&output));
     Ok(())
 }
 

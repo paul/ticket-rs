@@ -65,8 +65,13 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
         Commands::Link { ids } => commands::link(&ids),
         Commands::Unlink { id, target_id } => commands::unlink(&id, &target_id),
 
-        Commands::Ls
-        | Commands::Ready
+        Commands::Ls {
+            status,
+            assignee,
+            tag,
+        } => commands::ls(status.as_deref(), assignee.as_deref(), tag.as_deref()),
+
+        Commands::Ready
         | Commands::Blocked
         | Commands::Closed
         | Commands::Update

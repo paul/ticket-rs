@@ -7,24 +7,9 @@
 
 use std::path::Path;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::store::TicketStore;
 use crate::ticket::Status;
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-fn parse_status(s: &str) -> Result<Status> {
-    match s {
-        "open" => Ok(Status::Open),
-        "in_progress" => Ok(Status::InProgress),
-        "closed" => Ok(Status::Closed),
-        other => Err(Error::InvalidStatus {
-            value: other.to_string(),
-        }),
-    }
-}
 
 /// Resolve the ticket, update its status, write it back, and return the output
 /// message to be printed (`"Updated <id> -> <status>"`).
@@ -72,7 +57,7 @@ pub fn reopen(id: &str) -> Result<()> {
 }
 
 pub fn status(id: &str, status_str: &str) -> Result<()> {
-    let new_status = parse_status(status_str)?;
+    let new_status = status_str.parse::<Status>()?;
     let msg = set_status_impl(None, id, new_status)?;
     println!("{msg}");
     Ok(())
@@ -85,6 +70,7 @@ pub fn status(id: &str, status_str: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::Error;
     use std::fs;
     use tempfile::tempdir;
 
@@ -150,7 +136,7 @@ mod tests {
     fn status_explicit_in_progress() {
         let tmp = tempdir().unwrap();
         make_store_with_ticket(tmp.path(), "test-0001", "open", "");
-        let s = parse_status("in_progress").unwrap();
+        let s = "in_progress".parse::<Status>().unwrap();
         set_status_impl(Some(tmp.path()), "test-0001", s).unwrap();
         assert_eq!(read_status(tmp.path(), "test-0001"), "in_progress");
     }
@@ -159,7 +145,7 @@ mod tests {
     fn status_explicit_closed() {
         let tmp = tempdir().unwrap();
         make_store_with_ticket(tmp.path(), "test-0001", "open", "");
-        let s = parse_status("closed").unwrap();
+        let s = "closed".parse::<Status>().unwrap();
         set_status_impl(Some(tmp.path()), "test-0001", s).unwrap();
         assert_eq!(read_status(tmp.path(), "test-0001"), "closed");
     }
@@ -168,7 +154,7 @@ mod tests {
     fn status_explicit_open() {
         let tmp = tempdir().unwrap();
         make_store_with_ticket(tmp.path(), "test-0001", "closed", "");
-        let s = parse_status("open").unwrap();
+        let s = "open".parse::<Status>().unwrap();
         set_status_impl(Some(tmp.path()), "test-0001", s).unwrap();
         assert_eq!(read_status(tmp.path(), "test-0001"), "open");
     }
@@ -179,7 +165,7 @@ mod tests {
 
     #[test]
     fn invalid_status_value() {
-        let err = parse_status("invalid").unwrap_err();
+        let err = "invalid".parse::<Status>().unwrap_err();
         match err {
             Error::InvalidStatus { ref value } => {
                 assert_eq!(value, "invalid");

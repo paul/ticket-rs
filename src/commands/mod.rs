@@ -12,5 +12,8 @@ pub use link::{link, unlink};
 mod show;
 pub use show::show;
 
+mod list;
+pub use list::ls;
+
 mod status;
 pub use status::{close, reopen, start, status};

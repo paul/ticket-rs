@@ -128,7 +128,20 @@ pub enum Commands {
 
     // ── Phase 3: listing & querying ─────────────────────────────────
     /// List tickets with optional filters.
-    Ls,
+    #[command(alias = "list")]
+    Ls {
+        /// Filter by status (open, in_progress, closed).
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Filter by assignee name.
+        #[arg(short = 'a', long)]
+        assignee: Option<String>,
+
+        /// Filter by tag.
+        #[arg(short = 'T', long)]
+        tag: Option<String>,
+    },
 
     /// Show tickets that are ready to work on (all deps closed).
     Ready,

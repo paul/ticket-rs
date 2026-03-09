@@ -28,6 +28,21 @@ impl fmt::Display for Status {
     }
 }
 
+impl std::str::FromStr for Status {
+    type Err = crate::error::Error;
+
+    fn from_str(s: &str) -> crate::error::Result<Self> {
+        match s {
+            "open" => Ok(Status::Open),
+            "in_progress" => Ok(Status::InProgress),
+            "closed" => Ok(Status::Closed),
+            other => Err(crate::error::Error::InvalidStatus {
+                value: other.to_string(),
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TicketType {

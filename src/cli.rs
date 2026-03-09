@@ -249,7 +249,10 @@ pub enum Commands {
     Tree,
 
     /// Serialize tickets to JSON (with optional jq filter).
-    Query,
+    Query {
+        /// Optional jq filter expression (e.g. '.status == "open"').
+        filter: Option<String>,
+    },
 
     // ── Phase 6: plugin & advanced ──────────────────────────────────
     /// Open a ticket in $EDITOR.

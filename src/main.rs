@@ -117,7 +117,9 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             remove_tags.as_deref(),
         ),
 
-        Commands::Tree | Commands::Query | Commands::Super => {
+        Commands::Query { filter } => commands::query(filter.as_deref()),
+
+        Commands::Tree | Commands::Super => {
             eprintln!("not yet implemented");
             process::exit(1);
         }

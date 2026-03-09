@@ -1,5 +1,6 @@
 // Implementation of the `show` subcommand.
 
+use std::io::Write as _;
 use std::path::Path;
 
 use crate::error::Result;
@@ -12,9 +13,64 @@ use crate::ticket::{Status, Ticket};
 // ---------------------------------------------------------------------------
 
 /// Display a ticket's full content, including dynamically computed sections.
+///
+/// When stdout is a TTY the output is piped through the user's preferred pager
+/// (`TICKET_PAGER`, then `PAGER`). When no pager is configured, or when stdout
+/// is not a TTY (scripts, tests, pipes), the output is printed directly.
 pub fn show(id: &str) -> Result<()> {
     let output = show_impl(None, id)?;
-    print!("{}", highlight::highlight(&output));
+    let highlighted = highlight::highlight(&output);
+    page_or_print(&highlighted)
+}
+
+// ---------------------------------------------------------------------------
+// Pager support
+// ---------------------------------------------------------------------------
+
+/// Print `text` through a pager when stdout is a TTY, otherwise print directly.
+///
+/// Pager selection: `TICKET_PAGER` > `PAGER` > no pager (print directly).
+/// The pager command is passed to `sh -c` so that values like `"less -R"` work
+/// without any special argument parsing.
+///
+/// A broken pipe from the pager (user pressed `q` in `less`) is treated as
+/// success, not an error.
+fn page_or_print(text: &str) -> Result<()> {
+    // Only page when stdout is a real terminal.
+    if !console::Term::stdout().is_term() {
+        print!("{text}");
+        return Ok(());
+    }
+
+    let pager_cmd = std::env::var("TICKET_PAGER")
+        .or_else(|_| std::env::var("PAGER"))
+        .ok();
+
+    match pager_cmd {
+        None => print!("{text}"),
+        Some(cmd) => {
+            use std::process::{Command, Stdio};
+
+            let mut child = Command::new("sh")
+                .args(["-c", &cmd])
+                .stdin(Stdio::piped())
+                .spawn()?;
+
+            // Write output to the pager's stdin. A broken pipe means the user
+            // quit the pager early — that is not an error.
+            if let Some(mut stdin) = child.stdin.take()
+                && let Err(e) = stdin.write_all(text.as_bytes())
+                && e.kind() != std::io::ErrorKind::BrokenPipe
+            {
+                return Err(e.into());
+            }
+
+            // Wait for the pager to exit. Ignore non-zero exit codes — the
+            // user may have quit with `q`, which exits non-zero in some pagers.
+            let _ = child.wait();
+        }
+    }
+
     Ok(())
 }
 

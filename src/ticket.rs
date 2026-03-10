@@ -294,7 +294,17 @@ Some test notes here.
             ("closed", Status::Closed),
         ] {
             let content = format!(
-                "---\nid: tr-test\nstatus: {s}\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# T\n"
+                r#"---
+id: tr-test
+status: {s}
+deps: []
+links: []
+created: 2026-01-01T00:00:00Z
+type: task
+priority: 2
+---
+# T
+"#
             );
             let t = Ticket::read_from_str(&content).unwrap();
             assert_eq!(
@@ -314,7 +324,17 @@ Some test notes here.
             ("chore", TicketType::Chore),
         ] {
             let content = format!(
-                "---\nid: tr-test\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: {s}\npriority: 2\n---\n# T\n"
+                r#"---
+id: tr-test
+status: open
+deps: []
+links: []
+created: 2026-01-01T00:00:00Z
+type: {s}
+priority: 2
+---
+# T
+"#
             );
             let t = Ticket::read_from_str(&content).unwrap();
             assert_eq!(
@@ -326,7 +346,17 @@ Some test notes here.
 
     #[test]
     fn parse_optional_fields_missing() {
-        let content = "---\nid: tr-min\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# Minimal\n";
+        let content = r#"---
+id: tr-min
+status: open
+deps: []
+links: []
+created: 2026-01-01T00:00:00Z
+type: task
+priority: 2
+---
+# Minimal
+"#;
         let t = Ticket::read_from_str(content).unwrap();
         assert!(t.assignee.is_none());
         assert!(t.external_ref.is_none());
@@ -336,7 +366,18 @@ Some test notes here.
 
     #[test]
     fn external_ref_rename() {
-        let content = "---\nid: tr-ext\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\nexternal-ref: GH-99\n---\n# Ext\n";
+        let content = r#"---
+id: tr-ext
+status: open
+deps: []
+links: []
+created: 2026-01-01T00:00:00Z
+type: task
+priority: 2
+external-ref: GH-99
+---
+# Ext
+"#;
         let t = Ticket::read_from_str(content).unwrap();
         assert_eq!(t.external_ref.as_deref(), Some("GH-99"));
     }
@@ -386,7 +427,19 @@ Some test notes here.
 
     #[test]
     fn title_extraction() {
-        let content = "---\nid: tr-t\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# My Title\n\nSome text.\n";
+        let content = r#"---
+id: tr-t
+status: open
+deps: []
+links: []
+created: 2026-01-01T00:00:00Z
+type: task
+priority: 2
+---
+# My Title
+
+Some text.
+"#;
         let t = Ticket::read_from_str(content).unwrap();
         assert_eq!(t.title, "My Title");
     }
@@ -394,13 +447,35 @@ Some test notes here.
     #[test]
     fn missing_section_no_error() {
         // A ticket with no ## Notes section should parse without error.
-        let content = "---\nid: tr-ns\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# No Notes\n\nJust a description.\n";
+        let content = r#"---
+id: tr-ns
+status: open
+deps: []
+links: []
+created: 2026-01-01T00:00:00Z
+type: task
+priority: 2
+---
+# No Notes
+
+Just a description.
+"#;
         assert!(Ticket::read_from_str(content).is_ok());
     }
 
     #[test]
     fn invalid_priority_out_of_range_returns_err() {
-        let content = "---\nid: tr-bad\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 5\n---\n# T\n";
+        let content = r#"---
+id: tr-bad
+status: open
+deps: []
+links: []
+created: 2026-01-01T00:00:00Z
+type: task
+priority: 5
+---
+# T
+"#;
         assert!(
             Ticket::read_from_str(content).is_err(),
             "expected Err for priority value out of range (5)"
@@ -409,7 +484,12 @@ Some test notes here.
 
     #[test]
     fn invalid_yaml_returns_err() {
-        let content = "---\nid: [unclosed\nstatus: open\n---\n# T\n";
+        let content = r#"---
+id: [unclosed
+status: open
+---
+# T
+"#;
         assert!(
             Ticket::read_from_str(content).is_err(),
             "expected Err for malformed YAML"
@@ -418,7 +498,17 @@ Some test notes here.
 
     #[test]
     fn invalid_status_value_returns_err() {
-        let content = "---\nid: tr-bad\nstatus: unknown\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# T\n";
+        let content = r#"---
+id: tr-bad
+status: unknown
+deps: []
+links: []
+created: 2026-01-01T00:00:00Z
+type: task
+priority: 2
+---
+# T
+"#;
         assert!(
             Ticket::read_from_str(content).is_err(),
             "expected Err for unrecognized status value"

@@ -235,7 +235,11 @@ mod tests {
     #[test]
     fn from_yaml_error_produces_yaml_variant() {
         // Trigger a real serde_yaml parse error.
-        let yaml_err = serde_yaml::from_str::<serde_yaml::Value>(":\n  bad: [yaml").unwrap_err();
+        let yaml_err = serde_yaml::from_str::<serde_yaml::Value>(
+            r#":
+  bad: [yaml"#,
+        )
+        .unwrap_err();
         let err: Error = yaml_err.into();
         assert!(
             matches!(err, Error::Yaml(_)),

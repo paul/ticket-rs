@@ -36,6 +36,7 @@ pub struct Cli {
 pub enum Commands {
     // ── Phase 1: core commands ──────────────────────────────────────
     /// Create a new ticket.
+    #[command(visible_alias = "new")]
     Create {
         /// Title for the new ticket (defaults to "Untitled").
         title: Option<String>,
@@ -90,6 +91,7 @@ pub enum Commands {
     },
 
     /// Set a ticket's status to closed.
+    #[command(alias = "done")]
     Close {
         /// Ticket ID (supports partial matching).
         id: String,
@@ -242,6 +244,7 @@ pub enum Commands {
     },
 
     /// Append a timestamped note to a ticket.
+    #[command(visible_alias = "note")]
     AddNote {
         /// Ticket ID (supports partial matching).
         id: String,

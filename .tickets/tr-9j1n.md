@@ -1,6 +1,6 @@
 ---
 id: tr-9j1n
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-03-10T00:06:50Z
@@ -14,35 +14,48 @@ tags: [polish, ux, agent-ergonomics]
 
 Agents repeatedly fail with wrong command names because the correct ones are non-obvious. Three high-frequency patterns emerged from session history analysis:
 
-- `tk note <id>` (18 failures) → should route to `add-note`
-- `tk new <title>` (2 failures) → should route to `create`
-- `tk status <id> done` (1 failure) → should accept `done` as alias for `closed`
-
-All changes are in `/home/rando/.local/bin/tk`.
+- `ticket note <id>` (18 failures) → should route to `add-note`
+- `ticket new <title>` (2 failures) → should route to `create`
+- `ticket status <id> done` (1 failure) → should accept `done` as alias for `closed`
 
 ## Design
 
-**Dispatcher aliases (command case statement ~line 1384):**
-Add `note)` and `new)` alongside the existing entries:
-```bash
-new|create) shift; cmd_create "$@" ;;
-note|add-note) shift; cmd_add_note "$@" ;;
+**`note` and `new` aliases (`src/cli.rs`):**
+
+Add clap `#[command(alias = "...")]` attributes to the relevant variants in the `Commands` enum:
+
+```rust
+/// Create a new ticket.
+#[command(alias = "new")]
+Create { ... }
+
+/// Append a timestamped note to a ticket.
+#[command(alias = "note")]
+AddNote { ... }
 ```
 
-**`done` status alias (`validate_status` / `cmd_status` ~line 237):**
-Normalize the status value before validation so `done` maps to `closed`:
-```bash
-# In cmd_status, before calling validate_status:
-[[ "$status" == "done" ]] && status="closed"
+**`done` alias for `closed` (`src/ticket.rs`):**
+
+Add `"done"` as an accepted input in `Status::from_str`, normalizing it to `Closed`:
+
+```rust
+impl std::str::FromStr for Status {
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "open" => Ok(Status::Open),
+            "in_progress" => Ok(Status::InProgress),
+            "closed" | "done" => Ok(Status::Closed),
+            other => Err(Error::InvalidStatus { value: other.to_string() }),
+        }
+    }
+}
 ```
 
-**Help text:**
-Update `cmd_help` to surface the aliases so agents can discover them.
+The `Close` subcommand shorthand already hardcodes `Status::Closed` so no change needed there. The `Status` subcommand goes through `from_str`, which is the only place `"done"` needs to be handled.
 
 ## Acceptance Criteria
 
-- `tk note <id> 'text'` appends a note identically to `tk add-note <id> 'text'`
-- `tk new 'title' [opts]` creates a ticket identically to `tk create 'title' [opts]`
-- `tk status <id> done` sets status to closed without error
-- `tk help` output mentions at least the `note` and `new` aliases
-
+- `ticket note <id> 'text'` appends a note identically to `ticket add-note <id> 'text'`
+- `ticket new 'title' [opts]` creates a ticket identically to `ticket create 'title' [opts]`
+- `ticket status <id> done` sets status to closed without error
+- `ticket --help` output lists `note` and `new` as aliases in the command list

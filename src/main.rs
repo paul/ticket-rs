@@ -1,3 +1,4 @@
+use clap::CommandFactory;
 use clap::Parser;
 use console::style;
 use std::process;
@@ -8,6 +9,14 @@ use ticket_rs::pager;
 use ticket_rs::plugin;
 
 fn main() {
+    // Intercept bare `ticket help` before clap gets a chance to handle it so
+    // we can append a "Plugins" section listing discovered external commands.
+    let raw_args: Vec<String> = std::env::args().collect();
+    if raw_args.get(1).map(|s| s.as_str()) == Some("help") && raw_args.len() == 2 {
+        print_help_with_plugins();
+        process::exit(0);
+    }
+
     let cli = Cli::parse();
 
     // Apply the --color flag globally before any output is produced.
@@ -26,6 +35,48 @@ fn main() {
     if let Err(err) = result {
         eprintln!("{}: {err}", style("Error").red().bold());
         process::exit(1);
+    }
+}
+
+/// Print clap's standard help output followed by a "Plugins" section that
+/// lists all discovered external plugins whose names do not shadow a built-in.
+fn print_help_with_plugins() {
+    // Render clap's built-in long help (same as --help).
+    let mut cmd = Cli::command();
+    let help_text = cmd.render_long_help();
+    print!("{help_text}");
+
+    // Derive built-in names (and aliases) directly from the clap command tree
+    // so this set stays in sync automatically as commands are added or renamed.
+    let builtins: std::collections::HashSet<String> = Cli::command()
+        .get_subcommands()
+        .flat_map(|sub| {
+            std::iter::once(sub.get_name().to_string()).chain(
+                sub.get_all_aliases()
+                    .map(|a| a.to_string())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+
+    // Discover plugins, excluding any that share a name with a built-in.
+    let plugins: Vec<_> = plugin::discover_plugins()
+        .into_iter()
+        .filter(|p| !builtins.contains(&p.name))
+        .collect();
+
+    if plugins.is_empty() {
+        return;
+    }
+
+    // Align descriptions to the same column as clap's command list.
+    let max_name_len = plugins.iter().map(|p| p.name.len()).max().unwrap_or(0);
+    let col_width = max_name_len.max(6); // at least 6 chars wide
+
+    println!("\nPlugins:");
+    for p in &plugins {
+        let desc = p.description.as_deref().unwrap_or("(no description)");
+        println!("  {:<width$}  {desc}", p.name, width = col_width);
     }
 }
 

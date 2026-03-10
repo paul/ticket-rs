@@ -719,6 +719,7 @@ echo "plugin executed"
 def step_plugin_no_metadata(context, name, output):
     """Create a plugin without tk-plugin metadata comment."""
     content = f'''#!/usr/bin/env bash
+if [ "$1" = "--tk-describe" ]; then exit 1; fi
 echo "{output}"
 '''
     create_plugin(context, name, content)

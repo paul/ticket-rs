@@ -49,14 +49,14 @@ Feature: Plugin System
     And the output should contain "ticket"
 
   Scenario: Help command lists installed plugins
-    Given a plugin "tk-myplugin" with description "My custom plugin"
+    Given a plugin "ticket-myplugin" with description "My custom plugin"
     When I run "ticket help"
     Then the command should succeed
     And the output should contain "myplugin"
     And the output should contain "My custom plugin"
 
   Scenario: Help shows plugins without description as no description
-    Given a plugin "tk-nodesc" that outputs "test" without metadata
+    Given a plugin "ticket-nodesc" that outputs "test" without metadata
     When I run "ticket help"
     Then the command should succeed
     And the output should contain "nodesc"

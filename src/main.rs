@@ -6,6 +6,7 @@ use std::process;
 use ticket_rs::cli::{Cli, ColorWhen, Commands, DepCommands};
 use ticket_rs::commands;
 use ticket_rs::error::Error;
+use ticket_rs::input::{resolve_input, validate_no_multiple_stdin};
 use ticket_rs::pager;
 use ticket_rs::plugin;
 use ticket_rs::ticket::Status;
@@ -113,21 +114,31 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             external_ref,
             parent,
             tags,
-        } => commands::create(
-            title_flag
-                .as_deref()
-                .or(title.as_deref())
-                .unwrap_or("Untitled"),
-            description.as_deref(),
-            design.as_deref(),
-            acceptance.as_deref(),
-            &ticket_type,
-            &priority,
-            assignee.as_deref(),
-            external_ref.as_deref(),
-            parent.as_deref(),
-            tags.as_deref(),
-        ),
+        } => {
+            validate_no_multiple_stdin(&[
+                description.as_deref(),
+                design.as_deref(),
+                acceptance.as_deref(),
+            ])?;
+            let description = description.map(|v| resolve_input(&v)).transpose()?;
+            let design = design.map(|v| resolve_input(&v)).transpose()?;
+            let acceptance = acceptance.map(|v| resolve_input(&v)).transpose()?;
+            commands::create(
+                title_flag
+                    .as_deref()
+                    .or(title.as_deref())
+                    .unwrap_or("Untitled"),
+                description.as_deref(),
+                design.as_deref(),
+                acceptance.as_deref(),
+                &ticket_type,
+                &priority,
+                assignee.as_deref(),
+                external_ref.as_deref(),
+                parent.as_deref(),
+                tags.as_deref(),
+            )
+        }
 
         Commands::Show { id } => commands::show(&id),
         Commands::Start { id } => commands::start(&id),
@@ -163,7 +174,10 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             tag,
         } => commands::closed(limit, assignee.as_deref(), tag.as_deref()),
 
-        Commands::AddNote { id, text } => commands::add_note(&id, text.as_deref()),
+        Commands::AddNote { id, text } => {
+            let text = text.map(|v| resolve_input(&v)).transpose()?;
+            commands::add_note(&id, text.as_deref())
+        }
 
         Commands::Edit { id } => commands::edit(&id),
 
@@ -181,21 +195,31 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             tags,
             add_tags,
             remove_tags,
-        } => commands::update(
-            &id,
-            title.as_deref(),
-            description.as_deref(),
-            design.as_deref(),
-            acceptance.as_deref(),
-            priority.as_deref(),
-            ticket_type.as_deref(),
-            assignee.as_deref(),
-            external_ref.as_deref(),
-            parent.as_deref(),
-            tags.as_deref(),
-            add_tags.as_deref(),
-            remove_tags.as_deref(),
-        ),
+        } => {
+            validate_no_multiple_stdin(&[
+                description.as_deref(),
+                design.as_deref(),
+                acceptance.as_deref(),
+            ])?;
+            let description = description.map(|v| resolve_input(&v)).transpose()?;
+            let design = design.map(|v| resolve_input(&v)).transpose()?;
+            let acceptance = acceptance.map(|v| resolve_input(&v)).transpose()?;
+            commands::update(
+                &id,
+                title.as_deref(),
+                description.as_deref(),
+                design.as_deref(),
+                acceptance.as_deref(),
+                priority.as_deref(),
+                ticket_type.as_deref(),
+                assignee.as_deref(),
+                external_ref.as_deref(),
+                parent.as_deref(),
+                tags.as_deref(),
+                add_tags.as_deref(),
+                remove_tags.as_deref(),
+            )
+        }
 
         Commands::Query { filter } => commands::query(filter.as_deref()),
 

@@ -44,6 +44,13 @@ pub enum Error {
     Io(std::io::Error),
     /// A YAML parse or serialization error.
     Yaml(serde_yaml::Error),
+    /// A file referenced via the `@path` input convention could not be read.
+    InputFileError {
+        path: String,
+        source: std::io::Error,
+    },
+    /// More than one field in a single invocation attempted to read from stdin.
+    MultipleStdin,
 }
 
 /// Convenience alias for `Result<T, Error>`.
@@ -102,6 +109,12 @@ impl fmt::Display for Error {
             },
             Error::Io(err) => write!(f, "{err}"),
             Error::Yaml(err) => write!(f, "{err}"),
+            Error::InputFileError { path, source } => {
+                write!(f, "cannot read '@{path}': {source}")
+            }
+            Error::MultipleStdin => {
+                write!(f, "only one field may read from stdin at a time")
+            }
         }
     }
 }
@@ -111,6 +124,7 @@ impl std::error::Error for Error {
         match self {
             Error::Io(err) => Some(err),
             Error::Yaml(err) => Some(err),
+            Error::InputFileError { source, .. } => Some(source),
             _ => None,
         }
     }
@@ -344,6 +358,47 @@ mod tests {
         assert!(
             err.source().is_none(),
             "expected source() to return None for TicketsNotFound"
+        );
+    }
+
+    #[test]
+    fn display_input_file_error_contains_path_and_message() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "No such file or directory");
+        let err = Error::InputFileError {
+            path: "desc.md".to_string(),
+            source: io_err,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("@desc.md"),
+            "expected message to contain '@desc.md', got: {msg}"
+        );
+        assert!(
+            msg.contains("No such file or directory"),
+            "expected message to contain io error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn display_multiple_stdin() {
+        let err = Error::MultipleStdin;
+        let msg = err.to_string();
+        assert!(
+            msg.contains("only one field may read from stdin at a time"),
+            "expected stdin conflict message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn std_error_source_returns_some_for_input_file_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+        let err = Error::InputFileError {
+            path: "file.md".to_string(),
+            source: io_err,
+        };
+        assert!(
+            err.source().is_some(),
+            "expected source() to return Some for InputFileError"
         );
     }
 }

@@ -740,3 +740,105 @@ exec "$TK_SCRIPT" super create "$@"
 def step_run_with_plugins(context, command):
     """Run a command with plugins in PATH."""
     run_with_plugin_path(context, command)
+
+
+# ============================================================================
+# @ Input Convention Steps
+# ============================================================================
+
+@given(r'a file "(?P<filename>[^"]+)" with content "(?P<content>[^"]*)"')
+def step_file_with_content(context, filename, content):
+    """Create a file in the test directory with the given content."""
+    file_path = Path(context.test_dir) / filename
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    # Support \n in content strings from feature files
+    file_path.write_text(content.replace('\\n', '\n'))
+    context.last_file = str(file_path)
+
+
+@when(r'I run "(?P<command>(?:[^"\\]|\\.)*@FILE(?:[^"\\]|\\.)*)" with file "(?P<filename>[^"]+)"')
+def step_run_command_with_file(context, command, filename):
+    """Run a command replacing @FILE placeholder with the actual file path."""
+    command = command.replace('\\"', '"')
+    file_path = str(Path(context.test_dir) / filename)
+    command = command.replace('@FILE', f'@{file_path}')
+
+    ticket_script = get_ticket_script(context)
+    cmd = command.replace('ticket ', f'{ticket_script} ', 1)
+    cwd = getattr(context, 'working_dir', context.test_dir)
+
+    env = os.environ.copy()
+    if hasattr(context, 'plugin_dir'):
+        env['PATH'] = context.plugin_dir + ':' + env.get('PATH', '')
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        env=env
+    )
+
+    context.result = result
+    context.stdout = result.stdout.strip()
+    context.stderr = result.stderr.strip()
+    context.returncode = result.returncode
+    context.last_command = command
+
+    if 'ticket create' in command and result.returncode == 0:
+        context.last_created_id = result.stdout.strip()
+
+
+@then(r'the created ticket body preserves trailing blank line after "(?P<word>[^"]+)"')
+def step_created_ticket_body_blank_line_after(context, word):
+    """Assert the created ticket body has a blank line (empty line) following the given word."""
+    ticket_id = context.last_created_id
+    ticket_path = Path(context.test_dir) / '.tickets' / f'{ticket_id}.md'
+    content = ticket_path.read_text()
+    # Look for the word followed by a newline and then another newline (blank line).
+    assert f'{word}\n\n' in content or f'{word}\n' in content, \
+        f"Expected a blank line after '{word}' in ticket body\nContent: {content!r}"
+    # More precisely: the word must be followed by at least one more newline
+    # (not at the very end of the content after stripping).
+    idx = content.find(word)
+    assert idx != -1, f"'{word}' not found in ticket content"
+    after = content[idx + len(word):]
+    assert after.startswith('\n\n'), \
+        f"Expected blank line (\\n\\n) after '{word}', got: {after[:20]!r}\nFull content: {content!r}"
+
+
+@when(r'I run "(?P<command>(?:[^"\\]|\\.)+)" with stdin "(?P<stdin_text>[^"]*)"')
+def step_run_command_with_stdin(context, command, stdin_text):
+    """Run a command with the given text piped to stdin."""
+    command = command.replace('\\"', '"')
+    # Support \n escape sequences in feature-file strings.
+    stdin_text = stdin_text.replace('\\n', '\n')
+
+    ticket_script = get_ticket_script(context)
+    cmd = command.replace('ticket ', f'{ticket_script} ', 1)
+    cwd = getattr(context, 'working_dir', context.test_dir)
+
+    env = os.environ.copy()
+    if hasattr(context, 'plugin_dir'):
+        env['PATH'] = context.plugin_dir + ':' + env.get('PATH', '')
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        input=stdin_text,
+        env=env
+    )
+
+    context.result = result
+    context.stdout = result.stdout.strip()
+    context.stderr = result.stderr.strip()
+    context.returncode = result.returncode
+    context.last_command = command
+
+    if 'ticket create' in command and result.returncode == 0:
+        context.last_created_id = result.stdout.strip()

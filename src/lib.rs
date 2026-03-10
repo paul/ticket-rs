@@ -3,6 +3,7 @@ pub mod commands;
 pub mod error;
 pub mod highlight;
 pub mod id;
+pub mod input;
 pub mod pager;
 pub mod plugin;
 pub mod store;

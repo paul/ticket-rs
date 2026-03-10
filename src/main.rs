@@ -84,6 +84,7 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
     match command {
         Commands::Create {
             title,
+            title_flag,
             description,
             design,
             acceptance,
@@ -94,7 +95,10 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             parent,
             tags,
         } => commands::create(
-            title.as_deref().unwrap_or("Untitled"),
+            title_flag
+                .as_deref()
+                .or(title.as_deref())
+                .unwrap_or("Untitled"),
             description.as_deref(),
             design.as_deref(),
             acceptance.as_deref(),

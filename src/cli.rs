@@ -38,11 +38,15 @@ pub enum Commands {
     /// Create a new ticket.
     #[command(visible_alias = "new")]
     Create {
-        /// Title for the new ticket (defaults to "Untitled").
+        /// Title for the new ticket (positional form).
         title: Option<String>,
 
+        /// Title for the new ticket (flag form, alias for the positional argument).
+        #[arg(long = "title", value_name = "TITLE", conflicts_with = "title")]
+        title_flag: Option<String>,
+
         /// Description text.
-        #[arg(short, long)]
+        #[arg(short, long, visible_alias = "body")]
         description: Option<String>,
 
         /// Design section text.

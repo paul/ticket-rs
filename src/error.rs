@@ -2,11 +2,17 @@
 
 use std::fmt;
 
+use crate::ticket::Ticket;
+
 /// Unified error type for all ticket library operations.
 #[derive(Debug)]
 pub enum Error {
     /// A ticket with the given ID could not be found.
-    TicketNotFound { id: String },
+    TicketNotFound {
+        id: String,
+        /// Up to 3 similar tickets to show as did-you-mean suggestions.
+        suggestions: Vec<Ticket>,
+    },
     /// A partial ID matched more than one ticket.
     AmbiguousId {
         partial: String,
@@ -15,9 +21,17 @@ pub enum Error {
     /// No `.tickets` directory could be found in the current or any parent directory.
     TicketsNotFound,
     /// An unrecognized status string was encountered.
-    InvalidStatus { value: String },
+    InvalidStatus {
+        value: String,
+        /// The closest known status value, if any.
+        suggestion: Option<String>,
+    },
     /// An unrecognized ticket type string was encountered.
-    InvalidType { value: String },
+    InvalidType {
+        value: String,
+        /// The closest known type value, if any.
+        suggestion: Option<String>,
+    },
     /// An unrecognized priority value was encountered.
     InvalidPriority { value: String },
     /// A dependency that was expected to exist was not found.
@@ -38,7 +52,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::TicketNotFound { id } => {
+            Error::TicketNotFound { id, .. } => {
                 write!(f, "ticket '{id}' not found")
             }
             Error::AmbiguousId {
@@ -54,17 +68,25 @@ impl fmt::Display for Error {
             Error::TicketsNotFound => {
                 write!(f, "no .tickets directory found")
             }
-            Error::InvalidStatus { value } => {
+            Error::InvalidStatus { value, suggestion } => {
                 write!(
                     f,
                     "invalid status '{value}', valid options: open in_progress closed"
-                )
+                )?;
+                if let Some(s) = suggestion {
+                    write!(f, ", did you mean: {s}?")?;
+                }
+                Ok(())
             }
-            Error::InvalidType { value } => {
+            Error::InvalidType { value, suggestion } => {
                 write!(
                     f,
                     "invalid type '{value}', valid options: bug, feature, task, epic, chore"
-                )
+                )?;
+                if let Some(s) = suggestion {
+                    write!(f, ", did you mean: {s}?")?;
+                }
+                Ok(())
             }
             Error::InvalidPriority { value } => {
                 write!(
@@ -115,6 +137,7 @@ mod tests {
     fn display_ticket_not_found_contains_id() {
         let err = Error::TicketNotFound {
             id: "abc-1234".to_string(),
+            suggestions: vec![],
         };
         let msg = err.to_string();
         assert!(
@@ -162,6 +185,7 @@ mod tests {
     fn display_invalid_status_names_value_and_valid_options() {
         let err = Error::InvalidStatus {
             value: "pending".to_string(),
+            suggestion: None,
         };
         let msg = err.to_string();
         assert!(
@@ -183,9 +207,36 @@ mod tests {
     }
 
     #[test]
+    fn display_invalid_status_with_suggestion() {
+        let err = Error::InvalidStatus {
+            value: "in_progres".to_string(),
+            suggestion: Some("in_progress".to_string()),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("did you mean: in_progress?"),
+            "expected 'did you mean: in_progress?' in message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn display_invalid_status_no_suggestion_omits_hint() {
+        let err = Error::InvalidStatus {
+            value: "xyz".to_string(),
+            suggestion: None,
+        };
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("did you mean"),
+            "expected no 'did you mean' when suggestion is None, got: {msg}"
+        );
+    }
+
+    #[test]
     fn display_invalid_type_names_value_and_valid_options() {
         let err = Error::InvalidType {
             value: "story".to_string(),
+            suggestion: None,
         };
         let msg = err.to_string();
         assert!(
@@ -198,6 +249,32 @@ mod tests {
                 "expected message to list valid option '{opt}', got: {msg}"
             );
         }
+    }
+
+    #[test]
+    fn display_invalid_type_with_suggestion() {
+        let err = Error::InvalidType {
+            value: "feeture".to_string(),
+            suggestion: Some("feature".to_string()),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("did you mean: feature?"),
+            "expected 'did you mean: feature?' in message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn display_invalid_type_no_suggestion_omits_hint() {
+        let err = Error::InvalidType {
+            value: "xyz".to_string(),
+            suggestion: None,
+        };
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("did you mean"),
+            "expected no 'did you mean' when suggestion is None, got: {msg}"
+        );
     }
 
     #[test]

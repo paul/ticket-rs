@@ -5,8 +5,10 @@ use std::process;
 
 use ticket_rs::cli::{Cli, ColorWhen, Commands, DepCommands};
 use ticket_rs::commands;
+use ticket_rs::error::Error;
 use ticket_rs::pager;
 use ticket_rs::plugin;
+use ticket_rs::ticket::Status;
 
 fn main() {
     // Intercept bare `ticket help` before clap gets a chance to handle it so
@@ -33,7 +35,24 @@ fn main() {
     let result = dispatch(cli.command);
 
     if let Err(err) = result {
-        eprintln!("{}: {err}", style("Error").red().bold());
+        match &err {
+            Error::TicketNotFound { id, suggestions } if !suggestions.is_empty() => {
+                eprintln!("{}: ticket '{id}' not found", style("Error").red().bold());
+                eprintln!();
+                eprintln!("  did you mean?");
+                eprintln!();
+                for t in suggestions {
+                    let colored_status = match t.status {
+                        Status::Open => style("open").green().to_string(),
+                        Status::InProgress => style("in_progress").yellow().to_string(),
+                        Status::Closed => style("closed").dim().to_string(),
+                    };
+                    eprintln!("    {:<12}  [{}] - {}", t.id, colored_status, t.title);
+                }
+                eprintln!();
+            }
+            _ => eprintln!("{}: {err}", style("Error").red().bold()),
+        }
         process::exit(1);
     }
 }

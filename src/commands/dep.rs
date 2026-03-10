@@ -310,7 +310,10 @@ fn dep_tree_impl(start_dir: Option<&Path>, partial_id: &str, full: bool) -> Resu
 
     // Verify the root ticket exists (list_tickets skips parse errors).
     if !tickets.contains_key(&root_id) {
-        return Err(Error::TicketNotFound { id: root_id });
+        return Err(Error::TicketNotFound {
+            id: root_id,
+            suggestions: vec![],
+        });
     }
 
     // Pre-compute the maximum depth at which each node appears in the tree,

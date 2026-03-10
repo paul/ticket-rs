@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::error::{Error, Result};
+use crate::suggest;
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -36,9 +37,14 @@ impl std::str::FromStr for Status {
             "open" => Ok(Status::Open),
             "in_progress" => Ok(Status::InProgress),
             "closed" => Ok(Status::Closed),
-            other => Err(crate::error::Error::InvalidStatus {
-                value: other.to_string(),
-            }),
+            other => {
+                let suggestion =
+                    suggest::suggest_keyword(other, &["open", "in_progress", "closed"]);
+                Err(crate::error::Error::InvalidStatus {
+                    value: other.to_string(),
+                    suggestion,
+                })
+            }
         }
     }
 }
@@ -75,9 +81,14 @@ impl std::str::FromStr for TicketType {
             "task" => Ok(TicketType::Task),
             "epic" => Ok(TicketType::Epic),
             "chore" => Ok(TicketType::Chore),
-            other => Err(crate::error::Error::InvalidType {
-                value: other.to_string(),
-            }),
+            other => {
+                let suggestion =
+                    suggest::suggest_keyword(other, &["bug", "feature", "task", "epic", "chore"]);
+                Err(crate::error::Error::InvalidType {
+                    value: other.to_string(),
+                    suggestion,
+                })
+            }
         }
     }
 }

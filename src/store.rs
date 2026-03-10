@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
+use crate::suggest;
 use crate::ticket::Ticket;
 
 // ---------------------------------------------------------------------------
@@ -112,7 +113,10 @@ impl TicketStore {
         let path = self.dir.join(format!("{id}.md"));
         let content = std::fs::read_to_string(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                Error::TicketNotFound { id: id.to_string() }
+                Error::TicketNotFound {
+                    id: id.to_string(),
+                    suggestions: vec![],
+                }
             } else {
                 Error::Io(e)
             }
@@ -220,9 +224,14 @@ impl TicketStore {
         let mut matches: Vec<String> = ids.into_iter().filter(|id| id.contains(partial)).collect();
 
         match matches.len() {
-            0 => Err(Error::TicketNotFound {
-                id: partial.to_string(),
-            }),
+            0 => {
+                let all_tickets = self.list_tickets();
+                let suggestions = suggest::suggest_tickets(partial, &all_tickets, 3);
+                Err(Error::TicketNotFound {
+                    id: partial.to_string(),
+                    suggestions,
+                })
+            }
             1 => Ok(self.dir.join(format!("{}.md", matches.remove(0)))),
             _ => {
                 matches.sort();

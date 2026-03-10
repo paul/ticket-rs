@@ -6,4 +6,5 @@ pub mod id;
 pub mod pager;
 pub mod plugin;
 pub mod store;
+pub mod suggest;
 pub mod ticket;

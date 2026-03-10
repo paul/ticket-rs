@@ -167,7 +167,7 @@ mod tests {
     fn invalid_status_value() {
         let err = "invalid".parse::<Status>().unwrap_err();
         match err {
-            Error::InvalidStatus { ref value } => {
+            Error::InvalidStatus { ref value, .. } => {
                 assert_eq!(value, "invalid");
                 // The Display impl should name the value and list valid options.
                 let msg = format!("{err}");

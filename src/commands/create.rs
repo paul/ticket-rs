@@ -112,6 +112,7 @@ fn create_impl(
                     .and_then(|s| s.to_str())
                     .ok_or_else(|| Error::TicketNotFound {
                         id: partial.to_string(),
+                        suggestions: vec![],
                     })?;
             Some(stem.to_string())
         }

@@ -228,11 +228,7 @@ fn run_tk_describe(path: &Path) -> Option<String> {
     }
 
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
-    }
+    if text.is_empty() { None } else { Some(text) }
 }
 
 // ---------------------------------------------------------------------------

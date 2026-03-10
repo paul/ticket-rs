@@ -223,7 +223,10 @@ fn tree_impl(
         let root_id = full_id_from_path(&root_path, partial).to_string();
 
         if !visible.contains_key(&root_id) {
-            return Err(Error::TicketNotFound { id: root_id });
+            return Err(Error::TicketNotFound {
+                id: root_id,
+                suggestions: vec![],
+            });
         }
 
         let mut ancestors = HashSet::new();

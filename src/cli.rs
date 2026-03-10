@@ -83,9 +83,14 @@ pub enum Commands {
     },
 
     /// Display a ticket's full content.
+    #[command(trailing_var_arg = true)]
     Show {
         /// Ticket ID (supports partial matching).
         id: String,
+
+        /// Unrecognised arguments — ignored with a warning on stderr.
+        #[arg(hide = true, allow_hyphen_values = true, num_args = 0..)]
+        extra: Vec<std::ffi::OsString>,
     },
 
     /// Set a ticket's status to in_progress.

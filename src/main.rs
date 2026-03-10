@@ -140,7 +140,15 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             )
         }
 
-        Commands::Show { id } => commands::show(&id),
+        Commands::Show { id, extra } => {
+            for arg in &extra {
+                eprintln!(
+                    "warning: unknown argument '{}' ignored",
+                    arg.to_string_lossy()
+                );
+            }
+            commands::show(&id)
+        }
         Commands::Start { id } => commands::start(&id),
         Commands::Close { id } => commands::close(&id),
         Commands::Reopen { id } => commands::reopen(&id),

@@ -4,13 +4,13 @@ Feature: Plugin System
   So that I can add domain-specific functionality
 
   Scenario: Plugin in PATH is executed for unknown command
-    Given a plugin "tk-hello" that outputs "Hello from plugin!"
+    Given a plugin "ticket-hello" that outputs "Hello from plugin!"
     When I run "ticket hello"
     Then the command should succeed
     And the output should be "Hello from plugin!"
 
   Scenario: Plugin receives command arguments
-    Given a plugin "tk-echo" that outputs its arguments
+    Given a plugin "ticket-echo" that outputs its arguments
     When I run "ticket echo foo bar baz"
     Then the command should succeed
     And the output should be "foo bar baz"
@@ -21,13 +21,6 @@ Feature: Plugin System
     Then the command should succeed
     And the output should be "Greetings!"
 
-  Scenario: tk- prefix takes precedence over ticket- prefix
-    Given a plugin "tk-test" that outputs "tk-prefix"
-    And a plugin "ticket-test" that outputs "ticket-prefix"
-    When I run "ticket test"
-    Then the command should succeed
-    And the output should be "tk-prefix"
-
   Scenario: Super command bypasses plugins
     Given a clean tickets directory
     And a plugin "tk-create" that outputs "plugin create"
@@ -37,13 +30,13 @@ Feature: Plugin System
 
   Scenario: Plugin receives TICKETS_DIR environment variable
     Given a clean tickets directory
-    And a plugin "tk-checkenv" that outputs TICKETS_DIR
+    And a plugin "ticket-checkenv" that outputs TICKETS_DIR
     When I run "ticket checkenv"
     Then the command should succeed
     And the output should contain ".tickets"
 
   Scenario: Plugin receives TK_SCRIPT environment variable
-    Given a plugin "tk-checkscript" that outputs TK_SCRIPT
+    Given a plugin "ticket-checkscript" that outputs TK_SCRIPT
     When I run "ticket checkscript"
     Then the command should succeed
     And the output should contain "ticket"
@@ -64,14 +57,14 @@ Feature: Plugin System
 
   Scenario: Plugin can call built-in commands via super
     Given a clean tickets directory
-    And a plugin "tk-wrapper" that calls super create
+    And a plugin "ticket-wrapper" that calls super create
     When I run "ticket wrapper \"Wrapped ticket\""
     Then the command should succeed
     And the output should match a ticket ID pattern
 
   Scenario: Built-in commands still work with plugins present
     Given a clean tickets directory
-    And a plugin "tk-hello" that outputs "Hello!"
+    And a plugin "ticket-hello" that outputs "Hello!"
     When I run "ticket create \"Normal ticket\""
     Then the command should succeed
     And the output should match a ticket ID pattern

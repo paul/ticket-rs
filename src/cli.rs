@@ -151,7 +151,7 @@ pub enum Commands {
         assignee: Option<String>,
 
         /// Filter by tag.
-        #[arg(short = 'T', long)]
+        #[arg(short = 'T', long = "tags", visible_alias = "tag")]
         tag: Option<String>,
     },
 
@@ -162,7 +162,7 @@ pub enum Commands {
         assignee: Option<String>,
 
         /// Filter by tag.
-        #[arg(short = 'T', long)]
+        #[arg(short = 'T', long = "tags", visible_alias = "tag")]
         tag: Option<String>,
     },
 
@@ -173,7 +173,7 @@ pub enum Commands {
         assignee: Option<String>,
 
         /// Filter by tag.
-        #[arg(short = 'T', long)]
+        #[arg(short = 'T', long = "tags", visible_alias = "tag")]
         tag: Option<String>,
     },
 
@@ -188,7 +188,7 @@ pub enum Commands {
         assignee: Option<String>,
 
         /// Filter by tag.
-        #[arg(short = 'T', long)]
+        #[arg(short = 'T', long = "tags", visible_alias = "tag")]
         tag: Option<String>,
     },
 

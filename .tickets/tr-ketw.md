@@ -1,6 +1,6 @@
 ---
 id: tr-ketw
-status: in_progress
+status: closed
 deps: []
 links: []
 created: 2026-03-08T06:28:39Z

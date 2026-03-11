@@ -1,5 +1,6 @@
 use clap::CommandFactory;
 use clap::Parser;
+use clap_complete::env::CompleteEnv;
 use console::style;
 use std::process;
 
@@ -12,6 +13,11 @@ use ticket_rs::plugin;
 use ticket_rs::ticket::Status;
 
 fn main() {
+    // Handle shell completions before any other logic.  When the shell sets
+    // COMPLETE=<shell>, this call resolves and prints the completions then
+    // exits; otherwise it is a no-op.
+    CompleteEnv::with_factory(Cli::command).complete();
+
     // Intercept bare `ticket help` before clap gets a chance to handle it so
     // we can append a "Plugins" section listing discovered external commands.
     let raw_args: Vec<String> = std::env::args().collect();

@@ -26,6 +26,15 @@ impl TicketStore {
     // Constructors
     // -----------------------------------------------------------------------
 
+    /// Construct a store backed by an explicit directory path.
+    ///
+    /// Intended for tests and other contexts where the caller has already
+    /// resolved the path and does not want the normal upward-walk logic.
+    #[cfg(test)]
+    pub(crate) fn from_dir(dir: PathBuf) -> Self {
+        TicketStore { dir }
+    }
+
     /// Resolve the `.tickets/` directory, optionally accepting an explicit
     /// override path (for testing or the `TICKETS_DIR` env var).
     ///

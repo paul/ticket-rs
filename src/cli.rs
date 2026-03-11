@@ -3,6 +3,9 @@
 use std::ffi::OsString;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use clap_complete::engine::ArgValueCompleter;
+
+use crate::complete::TicketIdCompleter;
 
 /// When to use colored output.
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -74,7 +77,7 @@ pub enum Commands {
         external_ref: Option<String>,
 
         /// Parent ticket ID.
-        #[arg(long)]
+        #[arg(long, add = ArgValueCompleter::new(TicketIdCompleter))]
         parent: Option<String>,
 
         /// Comma-separated tags.
@@ -86,6 +89,7 @@ pub enum Commands {
     #[command(trailing_var_arg = true)]
     Show {
         /// Ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
 
         /// Unrecognised arguments — ignored with a warning on stderr.
@@ -96,6 +100,7 @@ pub enum Commands {
     /// Set a ticket's status to in_progress.
     Start {
         /// Ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
     },
 
@@ -103,18 +108,21 @@ pub enum Commands {
     #[command(alias = "done")]
     Close {
         /// Ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
     },
 
     /// Set a ticket's status to open.
     Reopen {
         /// Ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
     },
 
     /// Set a ticket's status explicitly.
     Status {
         /// Ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
 
         /// New status (open, in_progress, closed).
@@ -131,15 +139,17 @@ pub enum Commands {
     /// Create symmetric links between tickets.
     Link {
         /// Ticket IDs to link together (2 or more, supports partial matching).
-        #[arg(required = true, num_args = 2..)]
+        #[arg(required = true, num_args = 2.., add = ArgValueCompleter::new(TicketIdCompleter))]
         ids: Vec<String>,
     },
 
     /// Remove a symmetric link between tickets.
     Unlink {
         /// Source ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
         /// Target ticket ID to unlink (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         target_id: String,
     },
 
@@ -201,6 +211,7 @@ pub enum Commands {
     /// Modify a ticket's fields.
     Update {
         /// Ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
 
         /// New title (replaces the # heading).
@@ -236,7 +247,7 @@ pub enum Commands {
         external_ref: Option<String>,
 
         /// New parent ticket ID (validated to exist).
-        #[arg(long)]
+        #[arg(long, add = ArgValueCompleter::new(TicketIdCompleter))]
         parent: Option<String>,
 
         /// Replace all tags with this comma-separated list.
@@ -256,6 +267,7 @@ pub enum Commands {
     #[command(visible_alias = "note")]
     AddNote {
         /// Ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
 
         /// Note text. If omitted, reads from stdin.
@@ -267,6 +279,7 @@ pub enum Commands {
     Tree {
         /// Ticket ID to use as the subtree root (supports partial matching).
         /// If omitted, shows all root tickets.
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: Option<String>,
 
         /// Limit display depth (0 = root only, 1 = one level, …).
@@ -292,6 +305,7 @@ pub enum Commands {
     /// Open a ticket in $EDITOR.
     Edit {
         /// Ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
     },
 
@@ -315,16 +329,20 @@ pub enum DepCommands {
     /// Add a dependency between two tickets.
     Add {
         /// Source ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
         /// Dependency ticket ID to add (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         dep_id: String,
     },
 
     /// Remove a dependency from a ticket.
     Remove {
         /// Source ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
         /// Dependency ticket ID to remove (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         dep_id: String,
     },
 
@@ -334,6 +352,7 @@ pub enum DepCommands {
         #[arg(long)]
         full: bool,
         /// Root ticket ID (supports partial matching).
+        #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
         id: String,
     },
 

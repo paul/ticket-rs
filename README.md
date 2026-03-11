@@ -32,7 +32,7 @@ cd ticket-rs
 just install
 ```
 
-This builds a release binary, installs it to `~/.cargo/bin/ticket`, creates a `tk` symlink, and installs zsh completions.
+This builds a release binary, installs it to `~/.cargo/bin/ticket`, creates a `tk` symlink, and offers to install shell completions for your current shell.
 
 **Manual:**
 
@@ -343,13 +343,37 @@ Use `tk super <cmd>` to bypass plugin discovery and run the built-in directly.
 
 ## Shell Completions
 
-Zsh completions are installed automatically by `just install`. To install manually:
+`just install` will offer to add completions to your shell's rc file automatically.
 
-```
-cp completions/_tk ~/.local/share/zsh/site-functions/_tk
+The completions are generated dynamically at tab-time: your shell calls `tk` with a
+`COMPLETE=<shell>` environment variable, and the binary returns completion candidates
+(including live ticket IDs from the nearest `.tickets/` directory).
+
+To add completions manually, append the appropriate block to your shell config:
+
+**zsh** (`~/.zshrc`):
+```zsh
+# ticket shell completions
+source <(COMPLETE=zsh tk)
+compdef _clap_dynamic_completer_ticket tk
 ```
 
-The completion script provides context-aware completion for commands, ticket IDs, statuses, and types.
+**bash** (`~/.bashrc`):
+```bash
+# ticket shell completions
+source <(COMPLETE=bash tk)
+complete -o nospace -o bashdefault -F _clap_complete_ticket tk
+```
+
+**fish** (`~/.config/fish/config.fish`):
+```fish
+# ticket shell completions
+COMPLETE=fish tk | source
+complete --keep-order --exclusive --command tk --arguments "(COMPLETE=fish tk -- (commandline --current-process --tokenize --cut-at-cursor) (commandline --current-token))"
+```
+
+The extra binding on the second line of each block ensures completions work for both
+the `ticket` and `tk` command names.
 
 ## Testing
 
@@ -376,8 +400,8 @@ The project uses [just](https://github.com/casey/just) as a command runner:
 | `just fmt` | Format source code |
 | `just lint` | Check formatting + clippy |
 | `just test` | Rust tests + BDD tests |
-| `just install` | Build, install, symlink, completions |
-| `just uninstall` | Remove binary, symlink, completions |
+| `just install` | Build, install, symlink, offer completions |
+| `just uninstall` | Remove binary and symlink |
 | `just clean` | Remove build artifacts |
 
 ## License

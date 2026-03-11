@@ -17,18 +17,63 @@ use std::sync::LazyLock;
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
+// Source — tracks where a config value came from
+// ---------------------------------------------------------------------------
+
+/// The origin of a resolved configuration value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    /// No configuration was set; the built-in default applies.
+    Default,
+    /// Value came from a `.tickets.toml` file at the given path.
+    File(PathBuf),
+    /// Value came from an environment variable with the given name.
+    Env(&'static str),
+}
+
+// ---------------------------------------------------------------------------
+// Raw TOML shape (private — only used for deserialization)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Default, Deserialize)]
+struct RawConfig {
+    ticket_prefix: Option<String>,
+    ticket_dir: Option<PathBuf>,
+}
+
+// ---------------------------------------------------------------------------
 // Public config type
 // ---------------------------------------------------------------------------
 
-/// Project-local configuration for ticket-rs.
+/// Project-local configuration for ticket-rs, with per-field source tracking.
 ///
 /// Loaded once via [`global`] and cached for the lifetime of the process.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug)]
 pub struct Config {
     /// Override the automatically derived ticket ID prefix.
     pub ticket_prefix: Option<String>,
+    /// Where `ticket_prefix` came from.
+    pub ticket_prefix_source: Source,
+
     /// Override the default `.tickets/` directory path.
     pub ticket_dir: Option<PathBuf>,
+    /// Where `ticket_dir` came from.
+    pub ticket_dir_source: Source,
+
+    /// Path to the `.tickets.toml` file that was loaded, if any.
+    pub config_file: Option<PathBuf>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            ticket_prefix: None,
+            ticket_prefix_source: Source::Default,
+            ticket_dir: None,
+            ticket_dir_source: Source::Default,
+            config_file: None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -61,13 +106,29 @@ impl Config {
     }
 
     /// Walk upward from the current working directory looking for
-    /// `.tickets.toml`.  Returns `None` if no file is found or if the file
+    /// `.tickets.toml`. Returns `None` if no file is found or if the file
     /// cannot be parsed.
     fn from_file() -> Option<Self> {
         let cwd = std::env::current_dir().ok()?;
         let path = find_config_file(&cwd)?;
         let contents = std::fs::read_to_string(&path).ok()?;
-        toml::from_str(&contents).ok()
+        let raw: RawConfig = toml::from_str(&contents).ok()?;
+
+        let mut cfg = Config {
+            config_file: Some(path.clone()),
+            ..Config::default()
+        };
+
+        if let Some(v) = raw.ticket_prefix {
+            cfg.ticket_prefix = Some(v);
+            cfg.ticket_prefix_source = Source::File(path.clone());
+        }
+        if let Some(v) = raw.ticket_dir {
+            cfg.ticket_dir = Some(v);
+            cfg.ticket_dir_source = Source::File(path);
+        }
+
+        Some(cfg)
     }
 
     /// Override fields from environment variables.
@@ -76,15 +137,17 @@ impl Config {
     /// `TICKET_PREFIX` sets `ticket_prefix`.
     fn apply_env(&mut self) {
         // TICKET_DIR takes priority; fall back to TICKETS_DIR for compat.
-        if let Some(val) = std::env::var("TICKET_DIR")
-            .ok()
-            .or_else(|| std::env::var("TICKETS_DIR").ok())
-        {
+        if let Ok(val) = std::env::var("TICKET_DIR") {
             self.ticket_dir = Some(PathBuf::from(val));
+            self.ticket_dir_source = Source::Env("TICKET_DIR");
+        } else if let Ok(val) = std::env::var("TICKETS_DIR") {
+            self.ticket_dir = Some(PathBuf::from(val));
+            self.ticket_dir_source = Source::Env("TICKETS_DIR");
         }
 
         if let Ok(val) = std::env::var("TICKET_PREFIX") {
             self.ticket_prefix = Some(val);
+            self.ticket_prefix_source = Source::Env("TICKET_PREFIX");
         }
     }
 }
@@ -95,7 +158,7 @@ impl Config {
 
 /// Walk ancestor directories starting from `start`, returning the first
 /// `.tickets.toml` found, or `None` if the filesystem root is reached.
-fn find_config_file(start: &Path) -> Option<PathBuf> {
+pub fn find_config_file(start: &Path) -> Option<PathBuf> {
     let mut current = start;
     loop {
         let candidate = current.join(".tickets.toml");
@@ -117,7 +180,12 @@ fn find_config_file(start: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    // Env var mutations are not thread-safe; serialize all tests that call
+    // set_var/remove_var behind this mutex.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn write_config(dir: &Path, contents: &str) {
         let path = dir.join(".tickets.toml");
@@ -137,9 +205,9 @@ ticket_dir = "/tmp/tickets"
         );
         let path = find_config_file(dir.path()).unwrap();
         let contents = std::fs::read_to_string(&path).unwrap();
-        let cfg: Config = toml::from_str(&contents).unwrap();
-        assert_eq!(cfg.ticket_prefix.as_deref(), Some("myp"));
-        assert_eq!(cfg.ticket_dir, Some(PathBuf::from("/tmp/tickets")));
+        let raw: RawConfig = toml::from_str(&contents).unwrap();
+        assert_eq!(raw.ticket_prefix.as_deref(), Some("myp"));
+        assert_eq!(raw.ticket_dir, Some(PathBuf::from("/tmp/tickets")));
     }
 
     #[test]
@@ -147,15 +215,14 @@ ticket_dir = "/tmp/tickets"
         let dir = TempDir::new().unwrap();
         write_config(dir.path(), "ticket_prefix = \"abc\"\n");
         let path = find_config_file(dir.path()).unwrap();
-        let cfg: Config = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        assert_eq!(cfg.ticket_prefix.as_deref(), Some("abc"));
-        assert!(cfg.ticket_dir.is_none());
+        let raw: RawConfig = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(raw.ticket_prefix.as_deref(), Some("abc"));
+        assert!(raw.ticket_dir.is_none());
     }
 
     #[test]
     fn missing_file_returns_default() {
         let dir = TempDir::new().unwrap();
-        // No .tickets.toml created.
         assert!(find_config_file(dir.path()).is_none());
     }
 
@@ -163,7 +230,6 @@ ticket_dir = "/tmp/tickets"
     fn finds_file_in_ancestor() {
         let root = TempDir::new().unwrap();
         write_config(root.path(), "ticket_prefix = \"root\"\n");
-        // Create a nested subdirectory; the file should be found in root.
         let nested = root.path().join("a").join("b");
         std::fs::create_dir_all(&nested).unwrap();
         let found = find_config_file(&nested).unwrap();
@@ -171,33 +237,60 @@ ticket_dir = "/tmp/tickets"
     }
 
     #[test]
+    fn from_file_records_file_source() {
+        let dir = TempDir::new().unwrap();
+        write_config(dir.path(), "ticket_prefix = \"fp\"\n");
+        // Simulate loading by pointing find_config_file at the temp dir.
+        let path = find_config_file(dir.path()).unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let raw: RawConfig = toml::from_str(&contents).unwrap();
+        // Build a Config manually the same way from_file does.
+        let mut cfg = Config::default();
+        cfg.config_file = Some(path.clone());
+        if let Some(v) = raw.ticket_prefix {
+            cfg.ticket_prefix = Some(v);
+            cfg.ticket_prefix_source = Source::File(path.clone());
+        }
+        assert_eq!(cfg.ticket_prefix_source, Source::File(path));
+        assert_eq!(cfg.ticket_dir_source, Source::Default);
+    }
+
+    #[test]
     fn env_ticket_dir_overrides_file() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
         write_config(dir.path(), "ticket_dir = \"/from/file\"\n");
         let path = find_config_file(dir.path()).unwrap();
-        let mut cfg: Config = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        // Simulate env override.
-        // SAFETY: single-threaded test process; no other threads reading env.
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let raw: RawConfig = toml::from_str(&contents).unwrap();
+        let mut cfg = Config::default();
+        cfg.config_file = Some(path.clone());
+        if let Some(v) = raw.ticket_dir {
+            cfg.ticket_dir = Some(v);
+            cfg.ticket_dir_source = Source::File(path);
+        }
         unsafe { std::env::set_var("TICKET_DIR", "/from/env") };
         cfg.apply_env();
         unsafe { std::env::remove_var("TICKET_DIR") };
         assert_eq!(cfg.ticket_dir, Some(PathBuf::from("/from/env")));
+        assert_eq!(cfg.ticket_dir_source, Source::Env("TICKET_DIR"));
     }
 
     #[test]
     fn legacy_tickets_dir_fallback() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let mut cfg = Config::default();
-        // SAFETY: single-threaded test process; no other threads reading env.
         unsafe { std::env::set_var("TICKETS_DIR", "/legacy/path") };
         cfg.apply_env();
         unsafe { std::env::remove_var("TICKETS_DIR") };
         assert_eq!(cfg.ticket_dir, Some(PathBuf::from("/legacy/path")));
+        assert_eq!(cfg.ticket_dir_source, Source::Env("TICKETS_DIR"));
     }
 
     #[test]
     fn ticket_dir_takes_priority_over_tickets_dir() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let mut cfg = Config::default();
-        // SAFETY: single-threaded test process; no other threads reading env.
         unsafe {
             std::env::set_var("TICKET_DIR", "/new");
             std::env::set_var("TICKETS_DIR", "/old");
@@ -208,18 +301,27 @@ ticket_dir = "/tmp/tickets"
             std::env::remove_var("TICKETS_DIR");
         }
         assert_eq!(cfg.ticket_dir, Some(PathBuf::from("/new")));
+        assert_eq!(cfg.ticket_dir_source, Source::Env("TICKET_DIR"));
     }
 
     #[test]
     fn env_ticket_prefix_overrides_file() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
         write_config(dir.path(), "ticket_prefix = \"file\"\n");
         let path = find_config_file(dir.path()).unwrap();
-        let mut cfg: Config = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        // SAFETY: single-threaded test process; no other threads reading env.
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let raw: RawConfig = toml::from_str(&contents).unwrap();
+        let mut cfg = Config::default();
+        cfg.config_file = Some(path.clone());
+        if let Some(v) = raw.ticket_prefix {
+            cfg.ticket_prefix = Some(v);
+            cfg.ticket_prefix_source = Source::File(path);
+        }
         unsafe { std::env::set_var("TICKET_PREFIX", "env") };
         cfg.apply_env();
         unsafe { std::env::remove_var("TICKET_PREFIX") };
         assert_eq!(cfg.ticket_prefix.as_deref(), Some("env"));
+        assert_eq!(cfg.ticket_prefix_source, Source::Env("TICKET_PREFIX"));
     }
 }

@@ -5,7 +5,7 @@ use std::path::Path;
 use chrono::Utc;
 
 use crate::error::{Error, Result};
-use crate::id::{generate_id, generate_id_with_prefix};
+use crate::id::{generate_id, generate_id_with_prefix, normalise_prefix};
 use crate::store::TicketStore;
 use crate::ticket::{Status, Ticket, TicketType};
 
@@ -125,6 +125,7 @@ fn create_impl(
     //   2. Derived from the parent directory name of .tickets/
 
     let id = if let Some(prefix) = &crate::config::global().ticket_prefix {
+        let prefix = normalise_prefix(prefix);
         loop {
             let candidate = generate_id_with_prefix(prefix);
             if !store.dir().join(format!("{candidate}.md")).exists() {
@@ -201,11 +202,7 @@ fn parse_tags(s: Option<&str>) -> Option<Vec<String>> {
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
         .collect();
-    if tags.is_empty() {
-        None
-    } else {
-        Some(tags)
-    }
+    if tags.is_empty() { None } else { Some(tags) }
 }
 
 /// Build the markdown body for a new ticket.

@@ -84,3 +84,58 @@ Feature: Configuration via .tickets.toml and environment variables
     When I run "ticket create 'Deep ticket'"
     Then the command should succeed
     And the output should match the prefix "walk"
+
+  # ---------------------------------------------------------------------------
+  # show-config
+  # ---------------------------------------------------------------------------
+
+  Scenario: show-config displays default values with default annotation
+    When I run "ticket show-config"
+    Then the command should succeed
+    And the output should contain "ticket_prefix"
+    And the output should contain "ticket_dir"
+    And the output should contain "(default)"
+
+  Scenario: show-config shows ticket_prefix from .tickets.toml with file source
+    Given a .tickets.toml file with content:
+      """
+      ticket_prefix = "myp"
+      """
+    When I run "ticket show-config"
+    Then the command should succeed
+    And the output should contain "myp"
+    And the output should contain ".tickets.toml:"
+
+  Scenario: show-config shows ticket_prefix from env var with env annotation
+    When I run "ticket show-config" with TICKET_PREFIX set to "envp"
+    Then the command should succeed
+    And the output should contain "envp"
+    And the output should contain "env: TICKET_PREFIX"
+
+  Scenario: show-config shows ticket_dir from .tickets.toml with file source
+    Given a .tickets.toml file with content:
+      """
+      ticket_dir = "/custom/dir"
+      """
+    When I run "ticket show-config"
+    Then the command should succeed
+    And the output should contain "/custom/dir"
+    And the output should contain ".tickets.toml:"
+
+  Scenario: show-config shows ticket_dir from env var with env annotation
+    Given a separate tickets directory exists at "env-tickets" with ticket "env-0001" titled "Env ticket"
+    When I run "ticket show-config" with TICKET_DIR set to "env-tickets"
+    Then the command should succeed
+    And the output should contain "env-tickets"
+    And the output should contain "env: TICKET_DIR"
+
+  Scenario: show-config env var overrides file source annotation
+    Given a .tickets.toml file with content:
+      """
+      ticket_prefix = "file"
+      """
+    When I run "ticket show-config" with TICKET_PREFIX set to "over"
+    Then the command should succeed
+    And the output should contain "over"
+    And the output should contain "env: TICKET_PREFIX"
+    And the output should not contain "file"

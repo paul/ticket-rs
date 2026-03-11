@@ -29,7 +29,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
-use console::{style, Term};
+use console::{Term, style};
 
 use crate::error::{Error, Result};
 use crate::pager;

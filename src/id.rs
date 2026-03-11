@@ -38,6 +38,15 @@ pub fn generate_id_with_prefix(prefix: &str) -> String {
     format!("{}-{:04x}", prefix, suffix)
 }
 
+/// Normalise a user-supplied prefix by stripping a trailing `-` if present.
+///
+/// This allows users to write either `tk` or `tk-` in their config and get
+/// identical behaviour, since the `-` separator is always added by
+/// [`generate_id_with_prefix`].
+pub fn normalise_prefix(prefix: &str) -> &str {
+    prefix.strip_suffix('-').unwrap_or(prefix)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

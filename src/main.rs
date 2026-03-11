@@ -187,6 +187,8 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             commands::add_note(&id, text.as_deref())
         }
 
+        Commands::ShowConfig => commands::show_config(),
+
         Commands::Edit { id } => commands::edit(&id),
 
         Commands::Update {

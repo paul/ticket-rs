@@ -285,6 +285,10 @@ pub enum Commands {
     },
 
     // ── Phase 6: plugin & advanced ──────────────────────────────────
+    /// Display the resolved configuration and the source of each value.
+    #[command(name = "show-config")]
+    ShowConfig,
+
     /// Open a ticket in $EDITOR.
     Edit {
         /// Ticket ID (supports partial matching).

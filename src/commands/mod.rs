@@ -30,5 +30,8 @@ pub use query::query;
 mod tree;
 pub use tree::tree;
 
+mod show_config;
+pub use show_config::show_config;
+
 mod update;
 pub use update::update;

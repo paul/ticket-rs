@@ -18,7 +18,7 @@ pub enum ColorWhen {
 
 /// A local-first issue tracker backed by plain-text files.
 #[derive(Debug, Parser)]
-#[command(name = "ticket", version)]
+#[command(name = "ticket", version = concat!(env!("TICKET_VERSION_DATE"), " (compiled at ", env!("TICKET_COMPILED_AT"), ")"))]
 pub struct Cli {
     /// When to use colored output.
     #[arg(long, value_enum, default_value_t, global = true)]

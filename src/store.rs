@@ -60,10 +60,13 @@ impl TicketStore {
     }
 
     /// Find the `.tickets/` directory by walking parent directories from
-    /// `start_dir` (or cwd).  Respects the `TICKETS_DIR` environment variable
-    /// as an override.
+    /// `start_dir` (or cwd).
+    ///
+    /// The override directory is resolved from [`crate::config::global`] which
+    /// honours `TICKET_DIR` (and the legacy `TICKETS_DIR`) env vars as well as
+    /// the `ticket_dir` key in `.tickets.toml`.
     pub fn find(start_dir: Option<&Path>) -> Result<Self> {
-        let override_dir = std::env::var("TICKETS_DIR").ok().map(PathBuf::from);
+        let override_dir = crate::config::global().ticket_dir.clone();
         Self::find_impl(start_dir, override_dir)
     }
 

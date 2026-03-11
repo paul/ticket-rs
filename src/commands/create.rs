@@ -5,7 +5,7 @@ use std::path::Path;
 use chrono::Utc;
 
 use crate::error::{Error, Result};
-use crate::id::generate_id;
+use crate::id::{generate_id, generate_id_with_prefix};
 use crate::store::TicketStore;
 use crate::ticket::{Status, Ticket, TicketType};
 
@@ -118,26 +118,36 @@ fn create_impl(
         }
     };
 
-    // --- Derive the ID prefix from the project directory --------------------
-
-    let dir_name = store
-        .dir()
-        .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .filter(|n| !n.is_empty())
-        .ok_or_else(|| {
-            Error::Io(std::io::Error::other(
-                "unable to determine ticket prefix from path: .tickets/ has no parent directory name",
-            ))
-        })?;
-
     // --- Generate a collision-free ID ---------------------------------------
+    //
+    // Prefix resolution order (highest wins):
+    //   1. `ticket_prefix` from config (env var or .tickets.toml)
+    //   2. Derived from the parent directory name of .tickets/
 
-    let id = loop {
-        let candidate = id_gen(dir_name);
-        if !store.dir().join(format!("{candidate}.md")).exists() {
-            break candidate;
+    let id = if let Some(prefix) = &crate::config::global().ticket_prefix {
+        loop {
+            let candidate = generate_id_with_prefix(prefix);
+            if !store.dir().join(format!("{candidate}.md")).exists() {
+                break candidate;
+            }
+        }
+    } else {
+        let dir_name = store
+            .dir()
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .filter(|n| !n.is_empty())
+            .ok_or_else(|| {
+                Error::Io(std::io::Error::other(
+                    "unable to determine ticket prefix from path: .tickets/ has no parent directory name",
+                ))
+            })?;
+        loop {
+            let candidate = id_gen(dir_name);
+            if !store.dir().join(format!("{candidate}.md")).exists() {
+                break candidate;
+            }
         }
     };
 
@@ -191,7 +201,11 @@ fn parse_tags(s: Option<&str>) -> Option<Vec<String>> {
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
         .collect();
-    if tags.is_empty() { None } else { Some(tags) }
+    if tags.is_empty() {
+        None
+    } else {
+        Some(tags)
+    }
 }
 
 /// Build the markdown body for a new ticket.

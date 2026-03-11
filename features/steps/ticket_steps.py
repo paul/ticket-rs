@@ -287,6 +287,86 @@ def step_run_command_with_env(context, command, tickets_dir):
     context.last_command = command
 
 
+@when(r'I run "(?P<command>(?:[^"\\]|\\.)+)" with TICKET_DIR set to "(?P<ticket_dir>[^"]+)"')
+def step_run_command_with_ticket_dir(context, command, ticket_dir):
+    """Run a ticket CLI command with custom TICKET_DIR."""
+    command = command.replace('\\"', '"')
+    ticket_script = get_ticket_script(context)
+    cmd = command.replace('ticket ', f'{ticket_script} ', 1)
+
+    cwd = getattr(context, 'working_dir', context.test_dir)
+
+    env = os.environ.copy()
+    env.pop('TICKETS_DIR', None)
+    env['TICKET_DIR'] = str(Path(context.test_dir) / ticket_dir)
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        env=env
+    )
+
+    context.result = result
+    context.stdout = result.stdout.strip()
+    context.stderr = result.stderr.strip()
+    context.returncode = result.returncode
+    context.last_command = command
+
+    if 'ticket create' in command and result.returncode == 0:
+        context.last_created_id = result.stdout.strip()
+
+
+@when(r'I run "(?P<command>(?:[^"\\]|\\.)+)" with TICKET_PREFIX set to "(?P<prefix>[^"]+)"')
+def step_run_command_with_ticket_prefix(context, command, prefix):
+    """Run a ticket CLI command with a custom TICKET_PREFIX."""
+    command = command.replace('\\"', '"')
+    ticket_script = get_ticket_script(context)
+    cmd = command.replace('ticket ', f'{ticket_script} ', 1)
+
+    cwd = getattr(context, 'working_dir', context.test_dir)
+
+    env = os.environ.copy()
+    env['TICKET_PREFIX'] = prefix
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        env=env
+    )
+
+    context.result = result
+    context.stdout = result.stdout.strip()
+    context.stderr = result.stderr.strip()
+    context.returncode = result.returncode
+    context.last_command = command
+
+    if 'ticket create' in command and result.returncode == 0:
+        context.last_created_id = result.stdout.strip()
+
+
+@given(r'a \.tickets\.toml file with content:')
+def step_tickets_toml_with_content(context):
+    """Write a .tickets.toml file in the test directory with the given multiline content."""
+    path = Path(context.test_dir) / '.tickets.toml'
+    path.write_text(context.text)
+
+
+@then(r'the output should match the prefix "(?P<prefix>[^"]+)"')
+def step_output_matches_prefix(context, prefix):
+    """Assert the output ticket ID starts with the given prefix."""
+    ticket_id = context.stdout
+    assert ticket_id.startswith(f'{prefix}-'), \
+        f"Expected ticket ID to start with '{prefix}-', got '{ticket_id}'"
+
+
 @when(r'I run "(?P<command>(?:[^"\\]|\\.)+)"')
 def step_run_command(context, command):
     """Run a ticket CLI command."""

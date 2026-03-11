@@ -26,6 +26,14 @@ pub fn derive_prefix(dir_name: &str) -> String {
 /// 4 random lowercase hexadecimal characters.
 pub fn generate_id(dir_name: &str) -> String {
     let prefix = derive_prefix(dir_name);
+    generate_id_with_prefix(&prefix)
+}
+
+/// Generate a ticket ID in the form `PREFIX-SUFFIX` using an explicit prefix.
+///
+/// Unlike [`generate_id`], this skips prefix derivation and uses the supplied
+/// string directly. The suffix is 4 random lowercase hexadecimal characters.
+pub fn generate_id_with_prefix(prefix: &str) -> String {
     let suffix: u16 = rand::random();
     format!("{}-{:04x}", prefix, suffix)
 }

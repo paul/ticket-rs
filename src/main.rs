@@ -261,10 +261,17 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
                     Ok(()) // unreachable: exec_plugin exits the process
                 }
                 None => {
-                    eprintln!(
-                        "{}: unknown command '{cmd}'",
-                        console::style("Error").red().bold()
-                    );
+                    // If exactly one arg was given and it resolves to a ticket
+                    // ID, treat it as `tk show <id>`.
+                    if args.len() == 1 {
+                        if let Ok(store) = ticket_rs::store::TicketStore::find(None) {
+                            if store.resolve_id(&cmd).is_ok() {
+                                return commands::show(&cmd);
+                            }
+                        }
+                    }
+                    // Otherwise show help.
+                    print_help_with_plugins();
                     process::exit(1);
                 }
             }

@@ -39,7 +39,7 @@ pub struct Cli {
 pub enum Commands {
     // ── Phase 1: core commands ──────────────────────────────────────
     /// Create a new ticket.
-    #[command(visible_alias = "new")]
+    #[command(visible_alias = "new", visible_alias = "add")]
     Create {
         /// Title for the new ticket (positional form).
         title: Option<String>,

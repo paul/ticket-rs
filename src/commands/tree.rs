@@ -10,11 +10,14 @@
 //
 // Children at each node are sorted by status priority
 // (in_progress < open < closed), then by dependency topological order within
-// the same status group, then by `created` ascending.
+// the same status group, then by ticket priority (P0 < P4) ascending, then
+// by `created` ascending.
 //
-// Each line shows the ticket ID (dimmed), the colored status label, the title,
-// visible dependency IDs (colored by their status), and tags (dimmed, prefixed
-// with #).  When stdout is a TTY, lines are truncated to the terminal width:
+// Each line shows the ticket ID (dimmed), the colored priority label (P0–P4),
+// the colored status label, the title, visible dependency IDs (colored by
+// their status), and tags (dimmed, prefixed with #).  P0 = red, P1 =
+// yellow/orange, P2 = magenta/purple, P3 = dim, P4 = black.  When
+// stdout is a TTY, lines are truncated to the terminal width:
 // tags are dropped first, then the title is truncated with "…" if the line
 // is still too long, then deps are dropped as a last resort.  Truncation is
 // disabled for piped output.
@@ -47,6 +50,21 @@ fn status_label(status: &Status) -> String {
         Status::InProgress => format!("{}", style(label).cyan()),
         Status::Open => format!("{}", style(label).blue()),
         Status::Closed => format!("{}", style(label).dim()),
+    }
+}
+
+/// Return the colored priority label.
+///
+/// P0 = red, P1 = yellow (renders as orange on most terminals), P2 = magenta
+/// (purple), P3 = dim, P4 = black.
+fn priority_label(priority: u8) -> String {
+    let label = format!("P{priority}");
+    match priority {
+        0 => format!("{}", style(label).red()),
+        1 => format!("{}", style(label).yellow()),
+        2 => format!("{}", style(label).magenta()),
+        3 => format!("{}", style(label).dim()),
+        _ => format!("{}", style(label).black()),
     }
 }
 
@@ -140,12 +158,15 @@ fn topo_sort_group(ids: &[String], tickets: &HashMap<String, Ticket>) -> Vec<Str
         }
     }
 
-    // Stable initial ordering for the queue: created then id.
+    // Stable initial ordering for the queue: priority then created then id.
     let mut sorted_ids = ids.to_vec();
     sorted_ids.sort_by(|a, b| {
         let ta = &tickets[a];
         let tb = &tickets[b];
-        ta.created.cmp(&tb.created).then_with(|| a.cmp(b))
+        ta.priority
+            .cmp(&tb.priority)
+            .then_with(|| ta.created.cmp(&tb.created))
+            .then_with(|| a.cmp(b))
     });
 
     // Kahn's BFS — seed with nodes that have no incoming edges (in-degree 0).
@@ -170,11 +191,14 @@ fn topo_sort_group(ids: &[String], tickets: &HashMap<String, Ticket>) -> Vec<Str
                     newly_ready.push(dep);
                 }
             }
-            // Sort newly ready nodes by created then id before enqueueing.
+            // Sort newly ready nodes by priority then created then id before enqueueing.
             newly_ready.sort_by(|a, b| {
                 let ta = &tickets[*a];
                 let tb = &tickets[*b];
-                ta.created.cmp(&tb.created).then_with(|| a.cmp(b))
+                ta.priority
+                    .cmp(&tb.priority)
+                    .then_with(|| ta.created.cmp(&tb.created))
+                    .then_with(|| a.cmp(b))
             });
             for id in newly_ready {
                 queue.push_back(id);
@@ -193,7 +217,10 @@ fn topo_sort_group(ids: &[String], tickets: &HashMap<String, Ticket>) -> Vec<Str
         remainder.sort_by(|a, b| {
             let ta = &tickets[*a];
             let tb = &tickets[*b];
-            ta.created.cmp(&tb.created).then_with(|| a.cmp(b))
+            ta.priority
+                .cmp(&tb.priority)
+                .then_with(|| ta.created.cmp(&tb.created))
+                .then_with(|| a.cmp(b))
         });
         for id in remainder {
             result.push(id.to_string());
@@ -257,14 +284,15 @@ fn render_node(
     lines: &mut Vec<TreeLine>,
 ) {
     let ticket = tickets.get(id);
-    let (status, title, deps, tags) = match ticket {
+    let (status, priority, title, deps, tags) = match ticket {
         Some(t) => (
             t.status.clone(),
+            t.priority,
             t.title.clone(),
             t.deps.clone(),
             t.tags.clone().unwrap_or_default(),
         ),
-        None => (Status::Open, "(not found)".to_string(), vec![], vec![]),
+        None => (Status::Open, 2, "(not found)".to_string(), vec![], vec![]),
     };
 
     let (connector, child_prefix) = if is_root {
@@ -279,8 +307,9 @@ fn render_node(
     // full node text plus [cycle] and stop recursing (matches the original).
     if ancestors.contains(id) {
         let node = format!(
-            "{} {} {} [cycle]",
+            "{} {} {} {} [cycle]",
             style(id).dim(),
+            priority_label(priority),
             status_label(&status),
             title
         );
@@ -290,8 +319,9 @@ fn render_node(
         return;
     }
 
-    // Build the fixed part of the line: prefix + connector + id + status.
+    // Build the fixed part of the line: prefix + connector + id + priority + status.
     let id_part = format!("{}", style(id).dim());
+    let priority_part = priority_label(priority);
     let status_part = status_label(&status);
 
     // Build the deps suffix: only deps present in the visible set.
@@ -323,6 +353,7 @@ fn render_node(
         prefix,
         &connector,
         &id_part,
+        &priority_part,
         &status_part,
         &title,
         &deps_suffix,
@@ -381,6 +412,7 @@ fn build_line(
     prefix: &str,
     connector: &str,
     id_part: &str,
+    priority_part: &str,
     status_part: &str,
     title: &str,
     deps_suffix: &str,
@@ -388,8 +420,9 @@ fn build_line(
     term_width: Option<usize>,
 ) -> String {
     // Assemble with all optional parts.
-    let full =
-        format!("{prefix}{connector}{id_part} {status_part} {title}{deps_suffix}{tags_suffix}");
+    let full = format!(
+        "{prefix}{connector}{id_part} {priority_part} {status_part} {title}{deps_suffix}{tags_suffix}"
+    );
 
     let Some(width) = term_width else {
         return full;
@@ -400,15 +433,16 @@ fn build_line(
     }
 
     // Step 1: try without tags.
-    let no_tags = format!("{prefix}{connector}{id_part} {status_part} {title}{deps_suffix}");
+    let no_tags =
+        format!("{prefix}{connector}{id_part} {priority_part} {status_part} {title}{deps_suffix}");
     if display_width(&no_tags) <= width {
         return no_tags;
     }
 
     // Step 2: truncate the title (keeping deps).
-    // The line looks like: {prefix}{connector}{id} {status} {title}{deps}
+    // The line looks like: {prefix}{connector}{id} {priority} {status} {title}{deps}
     // overhead_no_deps is everything up to and including the space after status.
-    let overhead_no_deps = format!("{prefix}{connector}{id_part} {status_part} ");
+    let overhead_no_deps = format!("{prefix}{connector}{id_part} {priority_part} {status_part} ");
     let overhead_nd = display_width(&overhead_no_deps);
     let deps_width = display_width(deps_suffix);
     // We need at least 1 char for "…" plus the deps to make truncation useful.
@@ -423,15 +457,16 @@ fn build_line(
             s.push('…');
             s
         };
-        let candidate =
-            format!("{prefix}{connector}{id_part} {status_part} {truncated_title}{deps_suffix}");
+        let candidate = format!(
+            "{prefix}{connector}{id_part} {priority_part} {status_part} {truncated_title}{deps_suffix}"
+        );
         if display_width(&candidate) <= width {
             return candidate;
         }
     }
 
     // Step 3: drop deps entirely and truncate title against the narrower budget.
-    let overhead_bare = overhead_nd; // same — just id + status + space
+    let overhead_bare = overhead_nd; // same — just id + priority + status + space
     if overhead_bare < width {
         let title_chars_budget = width - overhead_bare;
         let truncated_title: String = if title.chars().count() <= title_chars_budget {
@@ -443,14 +478,16 @@ fn build_line(
             s.push('…');
             s
         };
-        return format!("{prefix}{connector}{id_part} {status_part} {truncated_title}");
+        return format!(
+            "{prefix}{connector}{id_part} {priority_part} {status_part} {truncated_title}"
+        );
     }
 
     // Absolute minimum: just the fixed parts with a space before deps when present.
     if deps_suffix.is_empty() {
-        format!("{prefix}{connector}{id_part} {status_part}")
+        format!("{prefix}{connector}{id_part} {priority_part} {status_part}")
     } else {
-        format!("{prefix}{connector}{id_part} {status_part} {deps_suffix}")
+        format!("{prefix}{connector}{id_part} {priority_part} {status_part} {deps_suffix}")
     }
 }
 
@@ -553,10 +590,12 @@ fn tree_impl(
         }
 
         // Sort roots: status priority (in_progress < open < closed),
-        // then created ascending, then ID ascending as a stable tiebreak.
+        // then ticket priority ascending, then created ascending, then ID
+        // ascending as a stable tiebreak.
         roots.sort_by(|a, b| {
             status_priority(&a.status)
                 .cmp(&status_priority(&b.status))
+                .then_with(|| a.priority.cmp(&b.priority))
                 .then_with(|| a.created.cmp(&b.created))
                 .then_with(|| a.id.cmp(&b.id))
         });
@@ -661,6 +700,8 @@ mod tests {
     /// `created` is an RFC 3339 timestamp string (e.g. "2026-01-01T00:00:00Z").
     /// `deps` is the list of dependency IDs.
     /// `tags` is the list of tags.
+    ///
+    /// Uses the default priority of 2.
     fn write_ticket(
         dir: &Path,
         id: &str,
@@ -669,7 +710,7 @@ mod tests {
         parent: Option<&str>,
         created: &str,
     ) {
-        write_ticket_full(dir, id, title, status, parent, created, &[], &[]);
+        write_ticket_full(dir, id, title, status, parent, created, &[], &[], 2);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -682,6 +723,7 @@ mod tests {
         created: &str,
         deps: &[&str],
         tags: &[&str],
+        priority: u8,
     ) {
         let tickets_dir = dir.join(".tickets");
         fs::create_dir_all(&tickets_dir).unwrap();
@@ -697,7 +739,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(", ");
         let content = format!(
-            "---\nid: {id}\nstatus: {status}\ndeps: [{deps_str}]\nlinks: []\ncreated: {created}\ntype: task\npriority: 2\nassignee: Test User\n{parent_line}\ntags: [{tags_str}]\n---\n# {title}\n\nBody text.\n"
+            "---\nid: {id}\nstatus: {status}\ndeps: [{deps_str}]\nlinks: []\ncreated: {created}\ntype: task\npriority: {priority}\nassignee: Test User\n{parent_line}\ntags: [{tags_str}]\n---\n# {title}\n\nBody text.\n"
         );
         fs::write(tickets_dir.join(format!("{id}.md")), content).unwrap();
     }
@@ -1297,6 +1339,7 @@ mod tests {
             "2026-01-02T00:00:00Z",
             &["task-0003"],
             &[],
+            2,
         );
         write_ticket_full(
             tmp.path(),
@@ -1307,6 +1350,7 @@ mod tests {
             "2026-01-03T00:00:00Z",
             &[],
             &[],
+            2,
         );
 
         let output = run_tree(tmp.path(), None, None, false);
@@ -1344,6 +1388,7 @@ mod tests {
             "2026-01-02T00:00:00Z",
             &["task-0010"],
             &[],
+            2,
         );
         write_ticket(
             tmp.path(),
@@ -1400,6 +1445,7 @@ mod tests {
             "2026-01-02T00:00:00Z",
             &["task-0003"],
             &[],
+            2,
         );
         write_ticket(
             tmp.path(),
@@ -1438,6 +1484,7 @@ mod tests {
             "2026-01-01T00:00:00Z",
             &["task-0002"],
             &[],
+            2,
         );
         write_ticket(
             tmp.path(),
@@ -1477,6 +1524,7 @@ mod tests {
             "2026-01-01T00:00:00Z",
             &["task-0099"],
             &[],
+            2,
         );
 
         let output = run_tree(tmp.path(), None, None, false);
@@ -1502,6 +1550,7 @@ mod tests {
             "2026-01-01T00:00:00Z",
             &["task-0002"],
             &[],
+            2,
         );
         write_ticket(
             tmp.path(),
@@ -1541,6 +1590,7 @@ mod tests {
             "2026-01-01T00:00:00Z",
             &[],
             &["phase-1", "core"],
+            2,
         );
 
         // Unlimited width — tags must appear.
@@ -1570,6 +1620,7 @@ mod tests {
             "2026-01-01T00:00:00Z",
             &[],
             &["phase-1"],
+            2,
         );
 
         // A very narrow terminal (30 cols) — the line is
@@ -1646,6 +1697,106 @@ mod tests {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Priority label in output
+    // -----------------------------------------------------------------------
+
+    /// Each ticket line shows its priority as a bracketed label (e.g. [P0]).
+    #[test]
+    fn priority_label_shown_in_output() {
+        let tmp = tempdir().unwrap();
+        write_ticket_full(
+            tmp.path(),
+            "task-0001",
+            "Critical ticket",
+            "open",
+            None,
+            "2026-01-01T00:00:00Z",
+            &[],
+            &[],
+            0,
+        );
+        write_ticket_full(
+            tmp.path(),
+            "task-0002",
+            "Low priority ticket",
+            "open",
+            None,
+            "2026-01-02T00:00:00Z",
+            &[],
+            &[],
+            4,
+        );
+
+        let output = run_tree(tmp.path(), None, None, false);
+        let plain = strip_ansi(&output);
+
+        let line_0001 = plain.lines().find(|l| l.contains("task-0001")).unwrap();
+        assert!(
+            line_0001.contains("P0"),
+            "P0 label missing from line; line:\n{line_0001}"
+        );
+
+        let line_0002 = plain.lines().find(|l| l.contains("task-0002")).unwrap();
+        assert!(
+            line_0002.contains("P4"),
+            "P4 label missing from line; line:\n{line_0002}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Siblings sorted by priority within same status group
+    // -----------------------------------------------------------------------
+
+    /// Within the same status group, higher priority (lower number) siblings
+    /// appear before lower priority (higher number) siblings.
+    #[test]
+    fn sort_siblings_by_priority_within_status_group() {
+        let tmp = tempdir().unwrap();
+        write_ticket(
+            tmp.path(),
+            "task-0001",
+            "Root",
+            "open",
+            None,
+            "2026-01-01T00:00:00Z",
+        );
+        // task-0002 is P4 created first; task-0003 is P0 created second.
+        // P0 should appear before P4 despite the later created timestamp.
+        write_ticket_full(
+            tmp.path(),
+            "task-0002",
+            "Low priority child",
+            "open",
+            Some("task-0001"),
+            "2026-01-02T00:00:00Z",
+            &[],
+            &[],
+            4,
+        );
+        write_ticket_full(
+            tmp.path(),
+            "task-0003",
+            "High priority child",
+            "open",
+            Some("task-0001"),
+            "2026-01-03T00:00:00Z",
+            &[],
+            &[],
+            0,
+        );
+
+        let output = run_tree(tmp.path(), None, None, false);
+        let plain = strip_ansi(&output);
+
+        let pos_p0 = plain.find("task-0003").unwrap(); // P0
+        let pos_p4 = plain.find("task-0002").unwrap(); // P4
+        assert!(
+            pos_p0 < pos_p4,
+            "P0 child should appear before P4 child; output:\n{plain}"
+        );
+    }
+
     /// When deps alone exceed the terminal width, the line must still fit within
     /// the budget (deps are dropped in the last-resort fallback).
     #[test]
@@ -1667,6 +1818,7 @@ mod tests {
                 "task-0006",
             ],
             &[],
+            2,
         );
         // Create the dep tickets so they appear in the visible set.
         for (i, id) in [

@@ -39,7 +39,25 @@ pub struct Cli {
 pub enum Commands {
     // ── Phase 1: core commands ──────────────────────────────────────
     /// Create a new ticket.
-    #[command(visible_alias = "new", visible_alias = "add")]
+    #[command(
+        visible_alias = "new",
+        visible_alias = "add",
+        after_long_help = "\
+TEXT FIELD INPUT CONVENTION
+  Text fields (-d/--description, --design, --acceptance) accept values directly
+  or via the following prefixes to avoid shell-quoting issues:
+
+    -d -          Read from stdin (one field per invocation may use stdin)
+    -d @-         Same as above
+    -d @path      Read from a file
+    -d @@literal  Literal string starting with '@'
+
+EXAMPLES
+    echo 'body with `backticks` and --dashes' | tk create \"Title\" -d -
+    tk create \"Title\" -d @body.md --design @design.md
+    tk create \"Title\" -d @@mention     # description is '@mention'
+"
+    )]
     Create {
         /// Title for the new ticket (positional form).
         title: Option<String>,
@@ -209,6 +227,21 @@ pub enum Commands {
 
     // ── Phase 4: update & notes ─────────────────────────────────────
     /// Modify a ticket's fields.
+    #[command(after_long_help = "\
+TEXT FIELD INPUT CONVENTION
+  Text fields (-d/--description, --design, --acceptance) accept values directly
+  or via the following prefixes to avoid shell-quoting issues:
+
+    -d -          Read from stdin (one field per invocation may use stdin)
+    -d @-         Same as above
+    -d @path      Read from a file
+    -d @@literal  Literal string starting with '@'
+
+EXAMPLES
+    echo 'body with `backticks` and --dashes' | tk update abc -d -
+    tk update abc --design @design.md
+    tk update abc -d @@mention     # description is '@mention'
+")]
     Update {
         /// Ticket ID (supports partial matching).
         #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]
@@ -264,7 +297,23 @@ pub enum Commands {
     },
 
     /// Append a timestamped note to a ticket.
-    #[command(visible_alias = "note")]
+    #[command(
+        visible_alias = "note",
+        after_long_help = "\
+TEXT FIELD INPUT CONVENTION
+  The note text accepts a value directly or via the following prefixes to avoid
+  shell-quoting issues:
+
+    tk add-note ID -        Read from stdin
+    tk add-note ID @-       Same as above
+    tk add-note ID @path    Read from a file
+    tk add-note ID @@lit    Literal string starting with '@'
+
+EXAMPLES
+    echo 'note with `backticks` and --dashes' | tk add-note abc -
+    tk add-note abc @notes.md
+"
+    )]
     AddNote {
         /// Ticket ID (supports partial matching).
         #[arg(add = ArgValueCompleter::new(TicketIdCompleter))]

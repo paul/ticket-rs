@@ -158,6 +158,29 @@ pub struct Ticket {
 }
 
 impl Ticket {
+    /// Return `true` if this ticket has the given tag.
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.tags
+            .as_ref()
+            .is_some_and(|tags| tags.iter().any(|t| t == tag))
+    }
+
+    /// Return `true` if this ticket passes the optional assignee and tag
+    /// filters.  A `None` filter matches any ticket.
+    pub fn matches_filters(&self, assignee: Option<&str>, tag: Option<&str>) -> bool {
+        if let Some(a) = assignee {
+            if self.assignee.as_deref() != Some(a) {
+                return false;
+            }
+        }
+        if let Some(t) = tag {
+            if !self.has_tag(t) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Parse a ticket from its full file contents (frontmatter + markdown body).
     pub fn read_from_str(content: &str) -> Result<Ticket> {
         // Strip the opening ---

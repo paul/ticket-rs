@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Refactor duplicated assignee/tag filter logic in `ls`, `ready`, `blocked`, and `closed` into `Ticket::has_tag` and `Ticket::matches_filters` helpers (tr-d9da)
+
 ## [20260315] - 2026-03-15
 
 ### Added

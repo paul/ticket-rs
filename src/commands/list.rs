@@ -60,22 +60,7 @@ pub(crate) fn format_list(
             {
                 return false;
             }
-            if let Some(a) = assignee
-                && t.assignee.as_deref() != Some(a)
-            {
-                return false;
-            }
-            if let Some(tag_val) = tag {
-                let has_tag = t
-                    .tags
-                    .as_ref()
-                    .map(|tags| tags.iter().any(|t| t == tag_val))
-                    .unwrap_or(false);
-                if !has_tag {
-                    return false;
-                }
-            }
-            true
+            t.matches_filters(assignee, tag)
         })
         .collect();
 
@@ -165,24 +150,8 @@ pub(crate) fn format_ready(
             {
                 return false;
             }
-            // Optional assignee filter.
-            if let Some(a) = assignee
-                && t.assignee.as_deref() != Some(a)
-            {
-                return false;
-            }
-            // Optional tag filter.
-            if let Some(tag_val) = tag {
-                let has_tag = t
-                    .tags
-                    .as_ref()
-                    .map(|tags| tags.iter().any(|tg| tg == tag_val))
-                    .unwrap_or(false);
-                if !has_tag {
-                    return false;
-                }
-            }
-            true
+            // Optional assignee and tag filters.
+            t.matches_filters(assignee, tag)
         })
         .collect();
 
@@ -271,24 +240,8 @@ pub(crate) fn format_blocked(
             if !has_unclosed_dep {
                 return false;
             }
-            // Optional assignee filter.
-            if let Some(a) = assignee
-                && t.assignee.as_deref() != Some(a)
-            {
-                return false;
-            }
-            // Optional tag filter.
-            if let Some(tag_val) = tag {
-                let has_tag = t
-                    .tags
-                    .as_ref()
-                    .map(|tags| tags.iter().any(|tg| tg == tag_val))
-                    .unwrap_or(false);
-                if !has_tag {
-                    return false;
-                }
-            }
-            true
+            // Optional assignee and tag filters.
+            t.matches_filters(assignee, tag)
         })
         .collect();
 
@@ -386,22 +339,9 @@ pub(crate) fn format_closed_from_paths(
             if ticket.status != crate::ticket::Status::Closed {
                 return None;
             }
-            // Optional assignee filter.
-            if let Some(a) = assignee
-                && ticket.assignee.as_deref() != Some(a)
-            {
+            // Optional assignee and tag filters.
+            if !ticket.matches_filters(assignee, tag) {
                 return None;
-            }
-            // Optional tag filter.
-            if let Some(tag_val) = tag {
-                let has_tag = ticket
-                    .tags
-                    .as_ref()
-                    .map(|tags| tags.iter().any(|t| t == tag_val))
-                    .unwrap_or(false);
-                if !has_tag {
-                    return None;
-                }
             }
             Some(format_closed_line(&ticket))
         })

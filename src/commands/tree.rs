@@ -87,15 +87,6 @@ fn full_id_from_path<'a>(path: &'a Path, partial: &'a str) -> &'a str {
     path.file_stem().and_then(|s| s.to_str()).unwrap_or(partial)
 }
 
-/// Status sort key: lower = higher priority in the tree.
-fn status_priority(s: &Status) -> u8 {
-    match s {
-        Status::InProgress => 0,
-        Status::Open => 1,
-        Status::Closed => 2,
-    }
-}
-
 /// Strip ANSI escape codes from a string and return the display width in
 /// characters.  This is used for terminal-width budgeting.
 fn display_width(s: &str) -> usize {
@@ -238,7 +229,7 @@ fn sort_children(kids: &mut Vec<String>, tickets: &HashMap<String, Ticket>) {
     for id in kids.drain(..) {
         let priority = tickets
             .get(&id)
-            .map(|t| status_priority(&t.status) as usize)
+            .map(|t| t.status.sort_key() as usize)
             .unwrap_or(1);
         groups[priority].push(id);
     }
@@ -592,13 +583,7 @@ fn tree_impl(
         // Sort roots: status priority (in_progress < open < closed),
         // then ticket priority ascending, then created ascending, then ID
         // ascending as a stable tiebreak.
-        roots.sort_by(|a, b| {
-            status_priority(&a.status)
-                .cmp(&status_priority(&b.status))
-                .then_with(|| a.priority.cmp(&b.priority))
-                .then_with(|| a.created.cmp(&b.created))
-                .then_with(|| a.id.cmp(&b.id))
-        });
+        roots.sort_by(|a, b| a.sort_cmp(b));
 
         let root_count = roots.len();
         for (i, root) in roots.iter().enumerate() {

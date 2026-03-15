@@ -64,8 +64,8 @@ pub(crate) fn format_list(
         })
         .collect();
 
-    // Sort by priority ascending, then by ID ascending.
-    filtered.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.id.cmp(&b.id)));
+    // Sort: status priority, then ticket priority, then created, then ID.
+    filtered.sort_by(|a, b| a.sort_cmp(b));
 
     // Format each ticket line.
     let lines: Vec<String> = filtered.iter().map(|t| format_line(t)).collect();
@@ -155,8 +155,8 @@ pub(crate) fn format_ready(
         })
         .collect();
 
-    // Sort by priority ascending, then by ID ascending.
-    filtered.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.id.cmp(&b.id)));
+    // Sort: status priority, then ticket priority, then created, then ID.
+    filtered.sort_by(|a, b| a.sort_cmp(b));
 
     let lines: Vec<String> = filtered.iter().map(|t| format_ready_line(t)).collect();
 
@@ -245,8 +245,8 @@ pub(crate) fn format_blocked(
         })
         .collect();
 
-    // Sort by priority ascending, then by ID ascending.
-    filtered.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.id.cmp(&b.id)));
+    // Sort: status priority, then ticket priority, then created, then ID.
+    filtered.sort_by(|a, b| a.sort_cmp(b));
 
     let lines: Vec<String> = filtered
         .iter()
@@ -420,6 +420,11 @@ mod tests {
         t
     }
 
+    fn with_created(mut t: Ticket, ts: chrono::DateTime<Utc>) -> Ticket {
+        t.created = ts;
+        t
+    }
+
     // -----------------------------------------------------------------------
     // Lists all tickets
     // -----------------------------------------------------------------------
@@ -588,10 +593,12 @@ mod tests {
 
     #[test]
     fn sort_by_priority_then_id() {
+        // Pin created to the same timestamp so ID is the stable tiebreaker.
+        let t0 = chrono::DateTime::from_timestamp(0, 0).unwrap();
         let tickets = vec![
-            with_priority(make_ticket("c", "Low priority"), 3),
-            with_priority(make_ticket("b", "High priority B"), 1),
-            with_priority(make_ticket("a", "High priority A"), 1),
+            with_created(with_priority(make_ticket("c", "Low priority"), 3), t0),
+            with_created(with_priority(make_ticket("b", "High priority B"), 1), t0),
+            with_created(with_priority(make_ticket("a", "High priority A"), 1), t0),
         ];
         let output = format_list(&tickets, None, None, None).unwrap();
         let lines: Vec<&str> = output.lines().collect();
@@ -755,10 +762,12 @@ mod tests {
 
     #[test]
     fn ready_sort_by_priority_then_id() {
+        // Pin created to the same timestamp so ID is the stable tiebreaker.
+        let t0 = chrono::DateTime::from_timestamp(0, 0).unwrap();
         let tickets = vec![
-            with_priority(make_ticket("c", "Low priority"), 3),
-            with_priority(make_ticket("b", "Also high priority"), 1),
-            with_priority(make_ticket("a", "High priority"), 1),
+            with_created(with_priority(make_ticket("c", "Low priority"), 3), t0),
+            with_created(with_priority(make_ticket("b", "Also high priority"), 1), t0),
+            with_created(with_priority(make_ticket("a", "High priority"), 1), t0),
         ];
         let output = format_ready(&tickets, None, None);
         let lines: Vec<&str> = output.lines().collect();
@@ -964,16 +973,27 @@ mod tests {
 
     #[test]
     fn blocked_sort_by_priority_then_id() {
+        // Pin created to the same timestamp so ID is the stable tiebreaker.
+        let t0 = chrono::DateTime::from_timestamp(0, 0).unwrap();
         let dep = with_status(make_ticket("dep", "Dep"), Status::Open);
         let tickets = vec![
-            with_deps(with_priority(make_ticket("c", "Low priority"), 3), &["dep"]),
-            with_deps(
-                with_priority(make_ticket("b", "Also high priority"), 1),
-                &["dep"],
+            with_created(
+                with_deps(with_priority(make_ticket("c", "Low priority"), 3), &["dep"]),
+                t0,
             ),
-            with_deps(
-                with_priority(make_ticket("a", "High priority"), 1),
-                &["dep"],
+            with_created(
+                with_deps(
+                    with_priority(make_ticket("b", "Also high priority"), 1),
+                    &["dep"],
+                ),
+                t0,
+            ),
+            with_created(
+                with_deps(
+                    with_priority(make_ticket("a", "High priority"), 1),
+                    &["dep"],
+                ),
+                t0,
             ),
             dep,
         ];

@@ -19,6 +19,18 @@ pub enum Status {
     Closed,
 }
 
+impl Status {
+    /// Sort key for ordering by workflow state: `in_progress` first, then
+    /// `open`, then `closed`.  Lower values sort earlier.
+    pub fn sort_key(&self) -> u8 {
+        match self {
+            Status::InProgress => 0,
+            Status::Open => 1,
+            Status::Closed => 2,
+        }
+    }
+}
+
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -158,6 +170,18 @@ pub struct Ticket {
 }
 
 impl Ticket {
+    /// Standard sort comparison: status priority (`in_progress` < `open` <
+    /// `closed`), then ticket priority ascending (P0 < P4), then `created`
+    /// ascending, then `id` ascending as a stable tiebreak.
+    pub fn sort_cmp(&self, other: &Ticket) -> std::cmp::Ordering {
+        self.status
+            .sort_key()
+            .cmp(&other.status.sort_key())
+            .then_with(|| self.priority.cmp(&other.priority))
+            .then_with(|| self.created.cmp(&other.created))
+            .then_with(|| self.id.cmp(&other.id))
+    }
+
     /// Return `true` if this ticket has the given tag.
     pub fn has_tag(&self, tag: &str) -> bool {
         self.tags

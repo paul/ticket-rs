@@ -5,6 +5,7 @@
 ### Changed
 
 - Refactor duplicated assignee/tag filter logic in `ls`, `ready`, `blocked`, and `closed` into `Ticket::has_tag` and `Ticket::matches_filters` helpers (tr-d9da)
+- Refactor duplicated sort logic into `Status::sort_key` and `Ticket::sort_cmp`; `ls`, `ready`, and `blocked` now sort by status first (in_progress before open), matching `tree` ordering (tr-9e03)
 
 ## [20260315] - 2026-03-15
 

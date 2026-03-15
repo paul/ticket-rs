@@ -3,6 +3,7 @@ pub mod commands;
 pub mod complete;
 pub mod config;
 pub mod error;
+pub mod format;
 pub mod highlight;
 pub mod id;
 pub mod input;

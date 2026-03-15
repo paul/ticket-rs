@@ -1,40 +1,115 @@
-// Implementation of the `ls` / `list` and `ready` subcommands.
+// Implementation of the `ls` / `list`, `ready`, `blocked`, and `closed`
+// subcommands.
+//
+// All list output uses the shared `build_line` formatter from `crate::format`
+// so that every command produces the same ticket-line style:
+//
+//   {id} {priority} {status} {title}[ [{deps}]][ {#tags}]
+//
+// Colors and terminal-width truncation are applied when stdout is a TTY;
+// truncation is disabled for piped output so scripted consumers get the full
+// content.
 
 use std::collections::HashMap;
 use std::path::Path;
 
+use console::{Term, style};
+
 use crate::error::Result;
+use crate::format::{build_line, dep_id_label, priority_label, status_label};
 use crate::pager;
 use crate::store::TicketStore;
 use crate::ticket::{Status, Ticket};
 
 // ---------------------------------------------------------------------------
-// Public entry point
+// TTY detection helper
+// ---------------------------------------------------------------------------
+
+fn tty_width() -> Option<usize> {
+    let term = Term::stdout();
+    if term.is_term() {
+        let (_rows, cols) = term.size();
+        Some(cols as usize)
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared single-ticket line formatter
+// ---------------------------------------------------------------------------
+
+/// Format a single ticket as a display line using the canonical format.
+///
+/// `by_id` is used to color dep IDs by their status.  Pass an empty map when
+/// dep coloring is not needed (e.g. `ready`, which has no dep suffix).
+/// `deps_override` replaces the ticket's own deps list (used by `blocked` to
+/// show only the unclosed subset).  Pass `None` to use `ticket.deps`.
+fn ticket_line(
+    ticket: &Ticket,
+    by_id: &HashMap<String, Ticket>,
+    deps_override: Option<&[String]>,
+    term_width: Option<usize>,
+) -> String {
+    let id_part = format!("{}", style(&ticket.id).dim());
+    let priority_part = priority_label(ticket.priority);
+    let status_part = status_label(&ticket.status);
+
+    let dep_ids = deps_override.unwrap_or(&ticket.deps);
+    let deps_suffix = if dep_ids.is_empty() {
+        String::new()
+    } else {
+        let labeled: Vec<String> = dep_ids
+            .iter()
+            .map(|dep_id| dep_id_label(dep_id, by_id))
+            .collect();
+        format!(" [{}]", labeled.join(", "))
+    };
+
+    let tags_suffix = match &ticket.tags {
+        Some(tags) if !tags.is_empty() => {
+            let tag_strs: Vec<String> = tags.iter().map(|t| format!("#{t}")).collect();
+            format!(" {}", style(tag_strs.join(" ")).dim())
+        }
+        _ => String::new(),
+    };
+
+    build_line(
+        "",
+        "",
+        &id_part,
+        &priority_part,
+        &status_part,
+        &ticket.title,
+        &deps_suffix,
+        &tags_suffix,
+        term_width,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// ls / list
 // ---------------------------------------------------------------------------
 
 /// List tickets, optionally filtered by status, assignee, and/or tag.
 pub fn ls(status: Option<&str>, assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
-    let output = ls_impl(None, status, assignee, tag)?;
+    let output = ls_impl(None, status, assignee, tag, tty_width())?;
     pager::page_or_print(&output)
 }
 
-// ---------------------------------------------------------------------------
-// Internal implementation (testable via explicit start_dir)
-// ---------------------------------------------------------------------------
-
-/// Core logic for `ls`.
-///
-/// `start_dir` is passed to `TicketStore::find`; `None` uses the cwd.
-/// Returns the full formatted output string (empty when no tickets match).
+/// Core logic for `ls`.  `start_dir` is passed to `TicketStore::find`; `None`
+/// uses the cwd.  Returns the full formatted output string (empty when no
+/// tickets match).
 fn ls_impl(
     start_dir: Option<&Path>,
     status: Option<&str>,
     assignee: Option<&str>,
     tag: Option<&str>,
+    term_width: Option<usize>,
 ) -> Result<String> {
     let store = TicketStore::find(start_dir)?;
     let tickets = store.list_tickets();
-    let output = format_list(&tickets, status, assignee, tag)?;
+    let output = format_list(&tickets, status, assignee, tag, term_width)?;
     Ok(output)
 }
 
@@ -47,9 +122,14 @@ pub(crate) fn format_list(
     status: Option<&str>,
     assignee: Option<&str>,
     tag: Option<&str>,
+    term_width: Option<usize>,
 ) -> Result<String> {
     // Parse the status filter once up-front so we can return an error early.
     let status_filter: Option<Status> = status.map(|s| s.parse::<Status>()).transpose()?;
+
+    // Build a lookup map for dep coloring.
+    let by_id: HashMap<String, Ticket> =
+        tickets.iter().map(|t| (t.id.clone(), t.clone())).collect();
 
     // Apply filters.
     let mut filtered: Vec<&Ticket> = tickets
@@ -67,8 +147,10 @@ pub(crate) fn format_list(
     // Sort: status priority, then ticket priority, then created, then ID.
     filtered.sort_by(|a, b| a.sort_cmp(b));
 
-    // Format each ticket line.
-    let lines: Vec<String> = filtered.iter().map(|t| format_line(t)).collect();
+    let lines: Vec<String> = filtered
+        .iter()
+        .map(|t| ticket_line(t, &by_id, None, term_width))
+        .collect();
 
     if lines.is_empty() {
         return Ok(String::new());
@@ -77,45 +159,26 @@ pub(crate) fn format_list(
     Ok(lines.join("\n") + "\n")
 }
 
-/// Format a single ticket as a display line.
-///
-/// Format: `{id:<12}  [{status}] - {title}` with an optional `  <- [{deps}]`
-/// suffix when the ticket has dependencies.
-fn format_line(ticket: &Ticket) -> String {
-    let mut line = format!("{:<12}  [{}] - {}", ticket.id, ticket.status, ticket.title);
-    if !ticket.deps.is_empty() {
-        line.push_str(&format!("  <- [{}]", ticket.deps.join(", ")));
-    }
-    line
-}
-
 // ---------------------------------------------------------------------------
-// ready — public entry point
+// ready
 // ---------------------------------------------------------------------------
 
 /// Show tickets that are ready to work on (open or in-progress, all deps closed).
 pub fn ready(assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
-    let output = ready_impl(None, assignee, tag)?;
+    let output = ready_impl(None, assignee, tag, tty_width())?;
     pager::page_or_print(&output)
 }
 
-// ---------------------------------------------------------------------------
-// Internal implementation (testable via explicit start_dir)
-// ---------------------------------------------------------------------------
-
 /// Core logic for `ready`.
-///
-/// `start_dir` is passed to `TicketStore::find`; `None` uses the cwd.
-/// Returns the full formatted output string (empty when no tickets match).
 fn ready_impl(
     start_dir: Option<&Path>,
     assignee: Option<&str>,
     tag: Option<&str>,
+    term_width: Option<usize>,
 ) -> Result<String> {
     let store = TicketStore::find(start_dir)?;
     let tickets = store.list_tickets();
-    let output = format_ready(&tickets, assignee, tag);
-    Ok(output)
+    Ok(format_ready(&tickets, assignee, tag, term_width))
 }
 
 /// Filter to ready tickets, sort, and format into the output string.
@@ -131,9 +194,11 @@ pub(crate) fn format_ready(
     tickets: &[Ticket],
     assignee: Option<&str>,
     tag: Option<&str>,
+    term_width: Option<usize>,
 ) -> String {
     // Build a lookup map so dependency checks are O(1).
-    let by_id: HashMap<&str, &Ticket> = tickets.iter().map(|t| (t.id.as_str(), t)).collect();
+    let by_id: HashMap<String, Ticket> =
+        tickets.iter().map(|t| (t.id.clone(), t.clone())).collect();
 
     let mut filtered: Vec<&Ticket> = tickets
         .iter()
@@ -143,11 +208,9 @@ pub(crate) fn format_ready(
                 return false;
             }
             // Exclude tickets with any unclosed (or unresolvable) dependency.
-            if !t
-                .deps
-                .iter()
-                .all(|dep_id| matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed))
-            {
+            if !t.deps.iter().all(|dep_id| {
+                matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed)
+            }) {
                 return false;
             }
             // Optional assignee and tag filters.
@@ -158,7 +221,12 @@ pub(crate) fn format_ready(
     // Sort: status priority, then ticket priority, then created, then ID.
     filtered.sort_by(|a, b| a.sort_cmp(b));
 
-    let lines: Vec<String> = filtered.iter().map(|t| format_ready_line(t)).collect();
+    // Ready tickets have no relevant dep suffix (all deps are closed).
+    let empty: HashMap<String, Ticket> = HashMap::new();
+    let lines: Vec<String> = filtered
+        .iter()
+        .map(|t| ticket_line(t, &empty, Some(&[]), term_width))
+        .collect();
 
     if lines.is_empty() {
         return String::new();
@@ -167,43 +235,26 @@ pub(crate) fn format_ready(
     lines.join("\n") + "\n"
 }
 
-/// Format a single ticket as a ready-list display line.
-///
-/// Format: `{id:<12}  [P{priority}][{status}] - {title}`
-fn format_ready_line(ticket: &Ticket) -> String {
-    format!(
-        "{:<12}  [P{}][{}] - {}",
-        ticket.id, ticket.priority, ticket.status, ticket.title
-    )
-}
-
 // ---------------------------------------------------------------------------
-// blocked — public entry point
+// blocked
 // ---------------------------------------------------------------------------
 
 /// Show tickets that are blocked by at least one unclosed dependency.
 pub fn blocked(assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
-    let output = blocked_impl(None, assignee, tag)?;
+    let output = blocked_impl(None, assignee, tag, tty_width())?;
     pager::page_or_print(&output)
 }
 
-// ---------------------------------------------------------------------------
-// Internal implementation (testable via explicit start_dir)
-// ---------------------------------------------------------------------------
-
 /// Core logic for `blocked`.
-///
-/// `start_dir` is passed to `TicketStore::find`; `None` uses the cwd.
-/// Returns the full formatted output string (empty when no tickets match).
 fn blocked_impl(
     start_dir: Option<&Path>,
     assignee: Option<&str>,
     tag: Option<&str>,
+    term_width: Option<usize>,
 ) -> Result<String> {
     let store = TicketStore::find(start_dir)?;
     let tickets = store.list_tickets();
-    let output = format_blocked(&tickets, assignee, tag);
-    Ok(output)
+    Ok(format_blocked(&tickets, assignee, tag, term_width))
 }
 
 /// Filter to blocked tickets, sort, and format into the output string.
@@ -219,9 +270,11 @@ pub(crate) fn format_blocked(
     tickets: &[Ticket],
     assignee: Option<&str>,
     tag: Option<&str>,
+    term_width: Option<usize>,
 ) -> String {
-    // Build a lookup map so dependency checks are O(1).
-    let by_id: HashMap<&str, &Ticket> = tickets.iter().map(|t| (t.id.as_str(), t)).collect();
+    // Build a lookup map so dependency checks and dep coloring are O(1).
+    let by_id: HashMap<String, Ticket> =
+        tickets.iter().map(|t| (t.id.clone(), t.clone())).collect();
 
     let mut filtered: Vec<&Ticket> = tickets
         .iter()
@@ -250,7 +303,18 @@ pub(crate) fn format_blocked(
 
     let lines: Vec<String> = filtered
         .iter()
-        .map(|t| format_blocked_line(t, &by_id))
+        .map(|t| {
+            // Only show the unclosed (or unresolvable) deps in the suffix.
+            let open_deps: Vec<String> = t
+                .deps
+                .iter()
+                .filter(|dep_id| {
+                    !matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed)
+                })
+                .cloned()
+                .collect();
+            ticket_line(t, &by_id, Some(&open_deps), term_width)
+        })
         .collect();
 
     if lines.is_empty() {
@@ -260,61 +324,31 @@ pub(crate) fn format_blocked(
     lines.join("\n") + "\n"
 }
 
-/// Format a single ticket as a blocked-list display line.
-///
-/// Format: `{id:<12}  [P{priority}][{status}] - {title}  <- [{unclosed_deps}]`
-///
-/// Only the unclosed (or unresolvable) dependency IDs appear in the suffix.
-fn format_blocked_line(ticket: &Ticket, by_id: &HashMap<&str, &Ticket>) -> String {
-    let open_deps: Vec<&str> = ticket
-        .deps
-        .iter()
-        .filter(
-            |dep_id| !matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed),
-        )
-        .map(|s| s.as_str())
-        .collect();
-
-    format!(
-        "{:<12}  [P{}][{}] - {}  <- [{}]",
-        ticket.id,
-        ticket.priority,
-        ticket.status,
-        ticket.title,
-        open_deps.join(", ")
-    )
-}
-
 // ---------------------------------------------------------------------------
-// closed — public entry point
+// closed
 // ---------------------------------------------------------------------------
 
 /// Show recently closed tickets sorted by file modification time (most recent first).
 pub fn closed(limit: usize, assignee: Option<&str>, tag: Option<&str>) -> Result<()> {
-    let output = closed_impl(None, limit, assignee, tag)?;
+    let output = closed_impl(None, limit, assignee, tag, tty_width())?;
     pager::page_or_print(&output)
 }
 
-// ---------------------------------------------------------------------------
-// Internal implementation (testable via explicit start_dir)
-// ---------------------------------------------------------------------------
-
 /// Core logic for `closed`.
-///
-/// `start_dir` is passed to `TicketStore::find`; `None` uses the cwd.
-/// Returns the full formatted output string (empty when no tickets match).
 fn closed_impl(
     start_dir: Option<&Path>,
     limit: usize,
     assignee: Option<&str>,
     tag: Option<&str>,
+    term_width: Option<usize>,
 ) -> Result<String> {
     let store = TicketStore::find(start_dir)?;
     // Retrieve paths sorted by mtime (most recent first) and read only
     // as many as needed for efficiency.
     let paths = store.paths_by_mtime();
-    let output = format_closed_from_paths(&paths, limit, assignee, tag);
-    Ok(output)
+    Ok(format_closed_from_paths(
+        &paths, limit, assignee, tag, term_width,
+    ))
 }
 
 /// Filter closed tickets from a mtime-sorted path list, apply filters, and
@@ -329,7 +363,10 @@ pub(crate) fn format_closed_from_paths(
     limit: usize,
     assignee: Option<&str>,
     tag: Option<&str>,
+    term_width: Option<usize>,
 ) -> String {
+    // Closed tickets have no relevant dep suffix.
+    let empty: HashMap<String, Ticket> = HashMap::new();
     let results: Vec<String> = paths
         .iter()
         .take(limit)
@@ -343,7 +380,7 @@ pub(crate) fn format_closed_from_paths(
             if !ticket.matches_filters(assignee, tag) {
                 return None;
             }
-            Some(format_closed_line(&ticket))
+            Some(ticket_line(&ticket, &empty, Some(&[]), term_width))
         })
         .collect();
 
@@ -352,13 +389,6 @@ pub(crate) fn format_closed_from_paths(
     }
 
     results.join("\n") + "\n"
-}
-
-/// Format a single closed ticket as a display line.
-///
-/// Format: `{id:<12}  [closed] - {title}`
-fn format_closed_line(ticket: &crate::ticket::Ticket) -> String {
-    format!("{:<12}  [closed] - {}", ticket.id, ticket.title)
 }
 
 // ---------------------------------------------------------------------------
@@ -435,7 +465,7 @@ mod tests {
             make_ticket("tr-0001", "First"),
             make_ticket("tr-0002", "Second"),
         ];
-        let output = format_list(&tickets, None, None, None).unwrap();
+        let output = format_list(&tickets, None, None, None, None).unwrap();
         assert!(
             output.contains("tr-0001"),
             "expected tr-0001 in output\n{output}"
@@ -461,15 +491,14 @@ mod tests {
     #[test]
     fn output_format_matches_expected() {
         let tickets = vec![make_ticket("list-0001", "My ticket")];
-        let output = format_list(&tickets, None, None, None).unwrap();
-        // Must match: ID  [STATUS] - TITLE (with at least one space between ID and [STATUS])
+        let output = format_list(&tickets, None, None, None, None).unwrap();
+        // Format: {id} {priority} {status} {title}
         let line = output.trim_end_matches('\n');
-        assert!(line.contains("[open]"), "expected '[open]' in line\n{line}");
+        assert!(line.contains("open"), "expected 'open' in line\n{line}");
         assert!(
-            line.contains("- My ticket"),
-            "expected '- My ticket' in line\n{line}"
+            line.contains("My ticket"),
+            "expected 'My ticket' in line\n{line}"
         );
-        // ID appears at the start of the line
         assert!(
             line.starts_with("list-0001"),
             "expected line to start with 'list-0001'\n{line}"
@@ -483,10 +512,10 @@ mod tests {
     #[test]
     fn deps_shown_when_non_empty() {
         let tickets = vec![with_deps(make_ticket("tr-0001", "Main"), &["dep-001"])];
-        let output = format_list(&tickets, None, None, None).unwrap();
+        let output = format_list(&tickets, None, None, None, None).unwrap();
         assert!(
-            output.contains("<- [dep-001]"),
-            "expected '<- [dep-001]' in output\n{output}"
+            output.contains("[dep-001]"),
+            "expected '[dep-001]' in output\n{output}"
         );
     }
 
@@ -497,7 +526,7 @@ mod tests {
     #[test]
     fn deps_hidden_when_empty() {
         let tickets = vec![make_ticket("tr-0001", "No deps")];
-        let output = format_list(&tickets, None, None, None).unwrap();
+        let output = format_list(&tickets, None, None, None, None).unwrap();
         assert!(
             !output.contains("<-"),
             "expected no '<-' in output when deps is empty\n{output}"
@@ -514,7 +543,7 @@ mod tests {
             make_ticket("tr-0001", "Open ticket"),
             with_status(make_ticket("tr-0002", "Closed ticket"), Status::Closed),
         ];
-        let output = format_list(&tickets, Some("open"), None, None).unwrap();
+        let output = format_list(&tickets, Some("open"), None, None, None).unwrap();
         assert!(
             output.contains("tr-0001"),
             "expected open ticket in output\n{output}"
@@ -535,7 +564,7 @@ mod tests {
             with_status(make_ticket("tr-0001", "Closed"), Status::Closed),
             with_status(make_ticket("tr-0002", "Also closed"), Status::Closed),
         ];
-        let output = format_list(&tickets, Some("open"), None, None).unwrap();
+        let output = format_list(&tickets, Some("open"), None, None, None).unwrap();
         assert!(
             output.is_empty(),
             "expected empty output when no open tickets\n{output}"
@@ -552,7 +581,7 @@ mod tests {
             with_assignee(make_ticket("tr-0001", "Alice ticket"), "Alice"),
             with_assignee(make_ticket("tr-0002", "Bob ticket"), "Bob"),
         ];
-        let output = format_list(&tickets, None, Some("Alice"), None).unwrap();
+        let output = format_list(&tickets, None, Some("Alice"), None, None).unwrap();
         assert!(
             output.contains("tr-0001"),
             "expected Alice's ticket\n{output}"
@@ -576,7 +605,7 @@ mod tests {
             ),
             with_tags(make_ticket("tr-0002", "Frontend ticket"), &["frontend"]),
         ];
-        let output = format_list(&tickets, None, None, Some("backend")).unwrap();
+        let output = format_list(&tickets, None, None, Some("backend"), None).unwrap();
         assert!(
             output.contains("tr-0001"),
             "expected backend ticket\n{output}"
@@ -600,7 +629,7 @@ mod tests {
             with_created(with_priority(make_ticket("b", "High priority B"), 1), t0),
             with_created(with_priority(make_ticket("a", "High priority A"), 1), t0),
         ];
-        let output = format_list(&tickets, None, None, None).unwrap();
+        let output = format_list(&tickets, None, None, None, None).unwrap();
         let lines: Vec<&str> = output.lines().collect();
         assert_eq!(lines.len(), 3, "expected 3 lines\n{output}");
         assert!(
@@ -624,7 +653,7 @@ mod tests {
     #[test]
     fn empty_list_produces_empty_output() {
         let tickets: Vec<Ticket> = vec![];
-        let output = format_list(&tickets, None, None, None).unwrap();
+        let output = format_list(&tickets, None, None, None, None).unwrap();
         assert!(
             output.is_empty(),
             "expected empty output for empty ticket list"
@@ -662,7 +691,7 @@ mod tests {
     #[test]
     fn ready_ticket_with_no_deps_is_ready() {
         let tickets = vec![make_ticket("tr-0001", "No deps ticket")];
-        let output = format_ready(&tickets, None, None);
+        let output = format_ready(&tickets, None, None, None);
         assert!(
             output.contains("tr-0001"),
             "expected ticket with no deps to appear in ready output\n{output}"
@@ -679,7 +708,7 @@ mod tests {
             with_deps(make_ticket("tr-0001", "Main ticket"), &["tr-dep"]),
             with_status(make_ticket("tr-dep", "Closed dep"), Status::Closed),
         ];
-        let output = format_ready(&tickets, None, None);
+        let output = format_ready(&tickets, None, None, None);
         assert!(
             output.contains("tr-0001"),
             "expected ticket with all closed deps to appear in ready output\n{output}"
@@ -696,7 +725,7 @@ mod tests {
             with_deps(make_ticket("tr-0001", "Blocked ticket"), &["tr-dep"]),
             make_ticket("tr-dep", "Open dep"), // status defaults to open
         ];
-        let output = format_ready(&tickets, None, None);
+        let output = format_ready(&tickets, None, None, None);
         assert!(
             !output.contains("tr-0001"),
             "expected ticket with open dep to be excluded from ready output\n{output}"
@@ -713,7 +742,7 @@ mod tests {
             make_ticket("tr-0001", "Closed ticket"),
             Status::Closed,
         )];
-        let output = format_ready(&tickets, None, None);
+        let output = format_ready(&tickets, None, None, None);
         assert!(
             !output.contains("tr-0001"),
             "expected closed ticket to be excluded from ready output\n{output}"
@@ -733,7 +762,7 @@ mod tests {
             ),
             with_status(make_ticket("tr-dep", "Closed dep"), Status::Closed),
         ];
-        let output = format_ready(&tickets, None, None);
+        let output = format_ready(&tickets, None, None, None);
         assert!(
             output.contains("tr-0001"),
             "expected in_progress ticket with closed deps to appear in ready output\n{output}"
@@ -747,12 +776,18 @@ mod tests {
     #[test]
     fn ready_priority_badge_format() {
         let tickets = vec![make_ticket("ready-001", "Priority ticket")]; // priority defaults to 2
-        let output = format_ready(&tickets, None, None);
+        let output = format_ready(&tickets, None, None, None);
         let line = output.trim_end_matches('\n');
-        // Assert exact line shape: "{id:<12}  [P{priority}][{status}] - {title}"
-        assert_eq!(
-            line, "ready-001     [P2][open] - Priority ticket",
-            "output line did not match expected format"
+        // Format: {id} {priority} {status} {title}
+        assert!(
+            line.starts_with("ready-001"),
+            "expected id at start\n{line}"
+        );
+        assert!(line.contains("P2"), "expected priority 'P2'\n{line}");
+        assert!(line.contains("open"), "expected status 'open'\n{line}");
+        assert!(
+            line.contains("Priority ticket"),
+            "expected title in line\n{line}"
         );
     }
 
@@ -769,7 +804,7 @@ mod tests {
             with_created(with_priority(make_ticket("b", "Also high priority"), 1), t0),
             with_created(with_priority(make_ticket("a", "High priority"), 1), t0),
         ];
-        let output = format_ready(&tickets, None, None);
+        let output = format_ready(&tickets, None, None, None);
         let lines: Vec<&str> = output.lines().collect();
         assert_eq!(lines.len(), 3, "expected 3 lines\n{output}");
         assert!(
@@ -796,7 +831,7 @@ mod tests {
             with_assignee(make_ticket("tr-0001", "Alice ticket"), "Alice"),
             with_assignee(make_ticket("tr-0002", "Bob ticket"), "Bob"),
         ];
-        let output = format_ready(&tickets, Some("Alice"), None);
+        let output = format_ready(&tickets, Some("Alice"), None, None);
         assert!(
             output.contains("tr-0001"),
             "expected Alice's ticket in ready output\n{output}"
@@ -820,7 +855,7 @@ mod tests {
             ),
             with_tags(make_ticket("tr-0002", "Frontend ticket"), &["frontend"]),
         ];
-        let output = format_ready(&tickets, None, Some("backend"));
+        let output = format_ready(&tickets, None, Some("backend"), None);
         assert!(
             output.contains("tr-0001"),
             "expected backend ticket in ready output\n{output}"
@@ -841,7 +876,7 @@ mod tests {
             with_status(make_ticket("tr-0001", "Closed A"), Status::Closed),
             with_status(make_ticket("tr-0002", "Closed B"), Status::Closed),
         ];
-        let output = format_ready(&tickets, None, None);
+        let output = format_ready(&tickets, None, None, None);
         assert!(
             output.is_empty(),
             "expected empty output when no tickets are ready\n{output}"
@@ -862,13 +897,13 @@ mod tests {
             with_deps(make_ticket("block-001", "Blocked ticket"), &["block-002"]),
             make_ticket("block-002", "Blocker ticket"), // status defaults to open
         ];
-        let output = format_blocked(&tickets, None, None);
+        let output = format_blocked(&tickets, None, None, None);
         assert!(
             output.contains("block-001"),
             "expected blocked ticket in output\n{output}"
         );
         assert!(
-            output.contains("<- [block-002]"),
+            output.contains("[block-002]"),
             "expected blocker dep in output\n{output}"
         );
     }
@@ -883,7 +918,7 @@ mod tests {
             with_deps(make_ticket("block-001", "Unblocked ticket"), &["block-002"]),
             with_status(make_ticket("block-002", "Closed blocker"), Status::Closed),
         ];
-        let output = format_blocked(&tickets, None, None);
+        let output = format_blocked(&tickets, None, None, None);
         assert!(
             !output.contains("block-001"),
             "expected ticket with all closed deps to be excluded\n{output}"
@@ -897,7 +932,7 @@ mod tests {
     #[test]
     fn blocked_ticket_with_no_deps_excluded() {
         let tickets = vec![make_ticket("block-001", "No deps ticket")];
-        let output = format_blocked(&tickets, None, None);
+        let output = format_blocked(&tickets, None, None, None);
         assert!(
             !output.contains("block-001"),
             "expected ticket with no deps to be excluded from blocked output\n{output}"
@@ -917,7 +952,7 @@ mod tests {
             ),
             make_ticket("block-002", "Open blocker"),
         ];
-        let output = format_blocked(&tickets, None, None);
+        let output = format_blocked(&tickets, None, None, None);
         assert!(
             !output.contains("block-001"),
             "expected closed ticket to be excluded from blocked output\n{output}"
@@ -938,9 +973,9 @@ mod tests {
             make_ticket("block-002", "Open blocker"),
             with_status(make_ticket("block-003", "Closed blocker"), Status::Closed),
         ];
-        let output = format_blocked(&tickets, None, None);
+        let output = format_blocked(&tickets, None, None, None);
         assert!(
-            output.contains("<- [block-002]"),
+            output.contains("[block-002]"),
             "expected only open dep in output\n{output}"
         );
         assert!(
@@ -959,12 +994,20 @@ mod tests {
             with_deps(make_ticket("block-001", "Blocked ticket"), &["block-002"]),
             make_ticket("block-002", "Blocker"),
         ];
-        let output = format_blocked(&tickets, None, None);
+        let output = format_blocked(&tickets, None, None, None);
         let line = output.trim_end_matches('\n');
-        assert_eq!(
-            line, "block-001     [P2][open] - Blocked ticket  <- [block-002]",
-            "output line did not match expected format"
+        // Format: {id} {priority} {status} {title} [{deps}]
+        assert!(
+            line.starts_with("block-001"),
+            "expected id at start\n{line}"
         );
+        assert!(line.contains("P2"), "expected priority 'P2'\n{line}");
+        assert!(line.contains("open"), "expected status 'open'\n{line}");
+        assert!(
+            line.contains("Blocked ticket"),
+            "expected title in line\n{line}"
+        );
+        assert!(line.contains("[block-002]"), "expected dep in line\n{line}");
     }
 
     // -----------------------------------------------------------------------
@@ -997,7 +1040,7 @@ mod tests {
             ),
             dep,
         ];
-        let output = format_blocked(&tickets, None, None);
+        let output = format_blocked(&tickets, None, None, None);
         let lines: Vec<&str> = output.lines().collect();
         assert_eq!(lines.len(), 3, "expected 3 blocked lines\n{output}");
         assert!(
@@ -1031,7 +1074,7 @@ mod tests {
             ),
             make_ticket("dep", "Open dep"),
         ];
-        let output = format_blocked(&tickets, Some("Alice"), None);
+        let output = format_blocked(&tickets, Some("Alice"), None, None);
         assert!(
             output.contains("block-001"),
             "expected Alice's ticket in blocked output\n{output}"
@@ -1059,7 +1102,7 @@ mod tests {
             ),
             make_ticket("dep", "Open dep"),
         ];
-        let output = format_blocked(&tickets, None, Some("backend"));
+        let output = format_blocked(&tickets, None, Some("backend"), None);
         assert!(
             output.contains("block-001"),
             "expected backend ticket in blocked output\n{output}"
@@ -1085,7 +1128,7 @@ mod tests {
             ),
             with_status(make_ticket("tr-closed-dep", "Closed dep"), Status::Closed),
         ];
-        let output = format_blocked(&tickets, None, None);
+        let output = format_blocked(&tickets, None, None, None);
         assert!(
             output.is_empty(),
             "expected empty output when no tickets are blocked\n{output}"
@@ -1147,14 +1190,14 @@ mod tests {
             None,
             None,
         );
-        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        let output = closed_impl(Some(root.path()), 20, None, None, None).unwrap();
         assert!(
             output.contains("cl-0001"),
             "expected closed ticket id in output\n{output}"
         );
         assert!(
-            output.contains("[closed]"),
-            "expected '[closed]' in output\n{output}"
+            output.contains("closed"),
+            "expected 'closed' in output\n{output}"
         );
         assert!(
             output.contains("A closed ticket"),
@@ -1178,7 +1221,7 @@ mod tests {
             None,
             None,
         );
-        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        let output = closed_impl(Some(root.path()), 20, None, None, None).unwrap();
         assert!(
             !output.contains("op-0001"),
             "expected open ticket to be excluded\n{output}"
@@ -1201,19 +1244,16 @@ mod tests {
             None,
             None,
         );
-        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        let output = closed_impl(Some(root.path()), 20, None, None, None).unwrap();
         let line = output.trim_end_matches('\n');
         assert!(
             line.starts_with("fmt-0001"),
             "expected line to start with id\n{line}"
         );
+        assert!(line.contains("closed"), "expected 'closed' in line\n{line}");
         assert!(
-            line.contains("[closed]"),
-            "expected '[closed]' in line\n{line}"
-        );
-        assert!(
-            line.contains("- Format ticket"),
-            "expected '- Format ticket' in line\n{line}"
+            line.contains("Format ticket"),
+            "expected 'Format ticket' in line\n{line}"
         );
     }
 
@@ -1235,7 +1275,7 @@ mod tests {
                 None,
             );
         }
-        let output = closed_impl(Some(root.path()), 1, None, None).unwrap();
+        let output = closed_impl(Some(root.path()), 1, None, None, None).unwrap();
         let lines: Vec<&str> = output.lines().collect();
         assert_eq!(
             lines.len(),
@@ -1262,7 +1302,7 @@ mod tests {
                 None,
             );
         }
-        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        let output = closed_impl(Some(root.path()), 20, None, None, None).unwrap();
         let lines: Vec<&str> = output.lines().collect();
         assert!(
             lines.len() <= 20,
@@ -1303,7 +1343,7 @@ mod tests {
         filetime::set_file_mtime(&path_older, FileTime::from_unix_time(1000, 0)).unwrap();
         filetime::set_file_mtime(&path_newer, FileTime::from_unix_time(2000, 0)).unwrap();
 
-        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        let output = closed_impl(Some(root.path()), 20, None, None, None).unwrap();
         let lines: Vec<&str> = output.lines().collect();
         assert_eq!(lines.len(), 2, "expected 2 lines\n{output}");
         assert!(
@@ -1340,7 +1380,7 @@ mod tests {
             Some("Bob"),
             None,
         );
-        let output = closed_impl(Some(root.path()), 20, Some("Alice"), None).unwrap();
+        let output = closed_impl(Some(root.path()), 20, Some("Alice"), None, None).unwrap();
         assert!(
             output.contains("cl-alice"),
             "expected Alice's ticket\n{output}"
@@ -1375,7 +1415,7 @@ mod tests {
             None,
             Some(&["frontend"]),
         );
-        let output = closed_impl(Some(root.path()), 20, None, Some("backend")).unwrap();
+        let output = closed_impl(Some(root.path()), 20, None, Some("backend"), None).unwrap();
         assert!(
             output.contains("cl-back"),
             "expected backend ticket\n{output}"
@@ -1402,7 +1442,7 @@ mod tests {
             None,
             None,
         );
-        let output = closed_impl(Some(root.path()), 20, None, None).unwrap();
+        let output = closed_impl(Some(root.path()), 20, None, None, None).unwrap();
         assert!(
             output.is_empty(),
             "expected empty output when no closed tickets\n{output}"

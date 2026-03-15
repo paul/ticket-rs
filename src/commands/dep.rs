@@ -16,7 +16,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use console::style;
+
 use crate::error::{Error, Result};
+use crate::format::{build_line, priority_label, status_label};
 use crate::pager;
 use crate::store::TicketStore;
 use crate::ticket::Ticket;
@@ -205,10 +208,13 @@ fn render_node(
     depth_memo: &mut HashMap<String, usize>,
     lines: &mut Vec<TreeLine>,
 ) {
-    // Determine the node's display content.
-    let (status_str, title_str) = match tickets.get(id) {
-        Some(t) => (format!("{}", t.status), t.title.clone()),
-        None => ("unknown".to_string(), "(not found)".to_string()),
+    // Determine the node's display content.  When a dep ID is not found in
+    // the ticket map (e.g. the dep ticket was deleted), show a clear "(not
+    // found)" sentinel.  Use Closed/dim rather than Open so the colouring
+    // signals "unavailable" rather than "ready to work on".
+    let (priority, status, title) = match tickets.get(id) {
+        Some(t) => (t.priority, t.status.clone(), t.title.clone()),
+        None => (2, crate::ticket::Status::Closed, "(not found)".to_string()),
     };
 
     // Build the connector and new child prefix.
@@ -220,17 +226,38 @@ fn render_node(
         ("├── ".to_string(), format!("{prefix}│   "))
     };
 
+    let id_part = format!("{}", style(id).dim());
+
     // If this node is already on the current ancestor path, annotate it as a
-    // cycle and stop recursing.  We check before building the normal line so
-    // the correct text is rendered directly rather than push-then-replace.
+    // cycle and stop recursing.
     if ancestors.contains(id) {
         lines.push(TreeLine {
-            text: format!("{prefix}{connector}{id} [cycle]"),
+            text: build_line(
+                prefix,
+                &connector,
+                &id_part,
+                &priority_label(priority),
+                &status_label(&status),
+                &format!("{title} [cycle]"),
+                "",
+                "",
+                None,
+            ),
         });
         return;
     }
 
-    let line_text = format!("{prefix}{connector}{id} [{status_str}] {title_str}");
+    let line_text = build_line(
+        prefix,
+        &connector,
+        &id_part,
+        &priority_label(priority),
+        &status_label(&status),
+        &title,
+        "",
+        "",
+        None,
+    );
     lines.push(TreeLine { text: line_text });
 
     // In dedup mode, skip if this node's maximum depth is greater than the
@@ -824,7 +851,7 @@ mod tests {
 
         let output = dep_tree_impl(Some(tmp.path()), "task-0001", false).unwrap();
 
-        assert!(output.contains("[open]"), "missing [open] status");
+        assert!(output.contains("open"), "missing 'open' status");
         assert!(output.contains("Main task"), "missing root title");
         assert!(output.contains("Dependency task"), "missing dep title");
     }

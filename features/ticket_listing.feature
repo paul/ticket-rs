@@ -24,7 +24,7 @@ Feature: Ticket Listing
     Given a ticket exists with ID "list-0001" and title "My ticket"
     When I run "ticket ls"
     Then the command should succeed
-    And the output should match pattern "list-0001\s+\[open\]\s+-\s+My ticket"
+    And the output should match pattern "list-0001\s+P2\s+open\s+My ticket"
 
   Scenario: List with status filter
     Given a ticket exists with ID "list-0001" and title "Open ticket"
@@ -41,7 +41,7 @@ Feature: Ticket Listing
     And ticket "list-0001" depends on "list-0002"
     When I run "ticket ls"
     Then the command should succeed
-    And the output should contain "<- [list-0002]"
+    And the output should contain "[list-0002]"
 
   Scenario: List with no tickets returns nothing
     When I run "ticket ls"
@@ -87,7 +87,7 @@ Feature: Ticket Listing
     Given a ticket exists with ID "ready-001" and title "Priority ticket"
     When I run "ticket ready"
     Then the command should succeed
-    And the output should match pattern "ready-001\s+\[P2\]\[open\]\s+-\s+Priority ticket"
+    And the output should match pattern "ready-001\s+P2\s+open\s+Priority ticket"
 
   Scenario: Ready sorts by priority then ID
     Given a ticket exists with ID "ready-003" and title "Low priority" with priority 3
@@ -106,7 +106,7 @@ Feature: Ticket Listing
     When I run "ticket blocked"
     Then the command should succeed
     And the output should contain "block-001"
-    And the output should contain "<- [block-002]"
+    And the output should contain "[block-002]"
 
   Scenario: Blocked excludes tickets with all deps closed
     Given a ticket exists with ID "block-001" and title "Unblocked ticket"
@@ -135,7 +135,7 @@ Feature: Ticket Listing
     And ticket "block-003" has status "closed"
     When I run "ticket blocked"
     Then the command should succeed
-    And the output should contain "<- [block-002]"
+    And the output should contain "[block-002]"
     And the output should not contain "block-003"
 
   Scenario: Closed shows recently closed tickets
@@ -144,7 +144,7 @@ Feature: Ticket Listing
     When I run "ticket closed"
     Then the command should succeed
     And the output should contain "done-0001"
-    And the output should contain "[closed]"
+    And the output should contain "closed"
     And the output should contain "Done ticket"
 
   Scenario: Closed respects limit

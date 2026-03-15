@@ -26,7 +26,37 @@ fn main() {
         process::exit(0);
     }
 
-    let cli = Cli::parse();
+    let cli = Cli::try_parse().unwrap_or_else(|e| {
+        // For real errors (not --help / --version), replace the terse
+        // "For more information, try '--help'." footer with the actual
+        // help for the relevant subcommand so agents don't need a second
+        // round-trip.
+        if e.use_stderr() {
+            // Render the error, strip the "For more information" line,
+            // then append the subcommand's full help.
+            let rendered = e.render().to_string();
+            let cleaned = rendered
+                .lines()
+                .filter(|l| !l.trim_start().starts_with("For more information"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            eprintln!("{}", cleaned);
+
+            // Walk the arg list to find which subcommand was invoked,
+            // then print its help.
+            for arg in raw_args.iter().skip(1) {
+                let mut root = Cli::command();
+                if let Some(sub) = root.find_subcommand_mut(arg.as_str()) {
+                    let _ = sub.print_help();
+                    eprintln!();
+                    break;
+                }
+            }
+
+            process::exit(e.exit_code());
+        }
+        e.exit()
+    });
 
     // Apply the --color flag globally before any output is produced.
     match cli.color {

@@ -47,13 +47,26 @@ install: release
 _prompt-completions:
     #!/usr/bin/env sh
     shell_name=$(basename "${SHELL:-}")
+    case "$shell_name" in
+        zsh)  rc="${ZDOTDIR:-$HOME}/.zshrc" ;;
+        bash) rc="$HOME/.bashrc" ;;
+        fish) rc="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish" ;;
+        *)
+            echo "Shell '$shell_name' not recognized. Add completions manually:"
+            echo "  See the Shell Completions section in README.md"
+            exit 0
+            ;;
+    esac
+    if [ -f "$rc" ] && grep -qF '# ticket shell completions' "$rc"; then
+        echo "Shell completions already present in $rc — skipping."
+        exit 0
+    fi
     printf 'Install shell completions for %s? [y/N] ' "$shell_name"
     read -r answer
     case "$answer" in
         [yY]*)
             case "$shell_name" in
                 zsh)
-                    rc="${ZDOTDIR:-$HOME}/.zshrc"
                     # Source the generated script (binds `ticket`) then alias `tk` to the
                     # same completion function so both command names get completions.
                     printf '\n# ticket shell completions\nsource <(COMPLETE=zsh tk)\ncompdef _clap_dynamic_completer_ticket tk\n' >> "$rc"
@@ -61,7 +74,6 @@ _prompt-completions:
                     echo "Restart your shell or run: source $rc"
                     ;;
                 bash)
-                    rc="$HOME/.bashrc"
                     # Source the generated script (binds `ticket`) then bind `tk` to the
                     # same completion function.
                     printf '\n# ticket shell completions\nsource <(COMPLETE=bash tk)\ncomplete -o nospace -o bashdefault -F _clap_complete_ticket tk\n' >> "$rc"
@@ -69,16 +81,11 @@ _prompt-completions:
                     echo "Restart your shell or run: source $rc"
                     ;;
                 fish)
-                    rc="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
                     # Fish uses per-command complete calls; source ticket completions and
                     # add a second binding for tk.
                     printf '\n# ticket shell completions\nCOMPLETE=fish tk | source\ncomplete --keep-order --exclusive --command tk --arguments "(COMPLETE=fish tk -- (commandline --current-process --tokenize --cut-at-cursor) (commandline --current-token))"\n' >> "$rc"
                     echo "Added completions to $rc"
                     echo "Restart your shell or run: source $rc"
-                    ;;
-                *)
-                    echo "Shell '$shell_name' not recognized. Add completions manually:"
-                    echo "  See the Shell Completions section in README.md"
                     ;;
             esac
             ;;

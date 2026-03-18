@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use console::style;
 
-use crate::ticket::{Status, Ticket};
+use crate::ticket::Status;
 
 // ---------------------------------------------------------------------------
 // Color helpers
@@ -52,13 +52,18 @@ pub fn priority_label(priority: u8) -> String {
     }
 }
 
-/// Return a dep ID styled by the dep ticket's status.  Falls back to dim if
-/// the dep is not in the provided ticket map.
-pub fn dep_id_label(dep_id: &str, tickets: &HashMap<String, Ticket>) -> String {
-    match tickets.get(dep_id).map(|t| &t.status) {
+/// Return a dep ID styled by the dep ticket's status.
+///
+/// - `in_progress` → cyan
+/// - `open`        → blue
+/// - `closed`      → dim + strikethrough (resolved, not blocking)
+/// - not found     → dim (unknown dep)
+pub fn dep_id_label(dep_id: &str, dep_statuses: &HashMap<String, Status>) -> String {
+    match dep_statuses.get(dep_id) {
         Some(Status::InProgress) => format!("{}", style(dep_id).cyan()),
         Some(Status::Open) => format!("{}", style(dep_id).blue()),
-        Some(Status::Closed) | None => format!("{}", style(dep_id).dim()),
+        Some(Status::Closed) => format!("{}", style(dep_id).dim().strikethrough()),
+        None => format!("{}", style(dep_id).dim()),
     }
 }
 

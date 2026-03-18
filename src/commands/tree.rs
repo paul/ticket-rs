@@ -32,7 +32,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
-use console::{Term, style};
+use console::{style, Term};
 
 use crate::error::{Error, Result};
 use crate::format::{build_line, dep_id_label, priority_label, status_label};
@@ -194,6 +194,8 @@ struct TreeLine {
 /// - `is_last`        — whether this node is the last child of its parent
 /// - `is_root`        — whether this node is a root (no connector drawn)
 /// - `tickets`        — full id→ticket map (visible set only)
+/// - `dep_statuses`   — id→status map for ALL tickets (used to render dep labels,
+///                      including closed deps that are not in the visible set)
 /// - `children`       — pre-built parent→children map (visible set only)
 /// - `ancestors`      — set of IDs on the current DFS path (for cycle detection)
 /// - `max_depth`      — optional depth limit (None = unlimited)
@@ -207,6 +209,7 @@ fn render_node(
     is_last: bool,
     is_root: bool,
     tickets: &HashMap<String, Ticket>,
+    dep_statuses: &HashMap<String, Status>,
     children: &HashMap<String, Vec<String>>,
     ancestors: &mut HashSet<String>,
     max_depth: Option<usize>,
@@ -255,18 +258,20 @@ fn render_node(
     let priority_part = priority_label(priority);
     let status_part = status_label(&status);
 
-    // Build the deps suffix: only deps present in the visible set.
-    let visible_deps: Vec<&str> = deps
+    // Build the deps suffix: show all known deps (open, in-progress, or closed).
+    // Closed deps are rendered dim+strikethrough to show they are resolved.
+    // Unknown dep IDs (not in dep_statuses at all) are omitted.
+    let known_deps: Vec<&str> = deps
         .iter()
         .map(String::as_str)
-        .filter(|dep_id| tickets.contains_key(*dep_id))
+        .filter(|dep_id| dep_statuses.contains_key(*dep_id))
         .collect();
-    let deps_suffix = if visible_deps.is_empty() {
+    let deps_suffix = if known_deps.is_empty() {
         String::new()
     } else {
-        let labeled: Vec<String> = visible_deps
+        let labeled: Vec<String> = known_deps
             .iter()
-            .map(|dep_id| dep_id_label(dep_id, tickets))
+            .map(|dep_id| dep_id_label(dep_id, dep_statuses))
             .collect();
         format!(" [{}]", labeled.join(", "))
     };
@@ -316,6 +321,7 @@ fn render_node(
             child_is_last,
             false,
             tickets,
+            dep_statuses,
             children,
             ancestors,
             max_depth,
@@ -351,6 +357,14 @@ fn tree_impl(
 
     // Load all tickets.
     let all_tickets: Vec<Ticket> = store.list_tickets();
+
+    // Build a status map for ALL tickets (including closed).  This is used by
+    // dep rendering so that closed deps can be shown dim+strikethrough even
+    // when they are not in the visible set.
+    let dep_statuses: HashMap<String, Status> = all_tickets
+        .iter()
+        .map(|t| (t.id.clone(), t.status.clone()))
+        .collect();
 
     // Build the visible set: filter out closed tickets unless --all was given.
     let visible: HashMap<String, Ticket> = all_tickets
@@ -404,6 +418,7 @@ fn tree_impl(
             true,
             true,
             &visible,
+            &dep_statuses,
             &children,
             &mut ancestors,
             max_depth,
@@ -441,6 +456,7 @@ fn tree_impl(
                 is_last,
                 true,
                 &visible,
+                &dep_statuses,
                 &children,
                 &mut ancestors,
                 max_depth,
@@ -1368,10 +1384,10 @@ mod tests {
         );
     }
 
-    /// Closed deps are excluded from the default view (include_closed=false)
-    /// so they should not appear in the dep list.
+    /// Closed deps are shown in the default view (include_closed=false) with
+    /// dim+strikethrough styling to indicate they are resolved and not blocking.
     #[test]
-    fn closed_dep_not_shown_by_default() {
+    fn closed_dep_shown_with_strikethrough_by_default() {
         let tmp = tempdir().unwrap();
         write_ticket_full(
             tmp.path(),
@@ -1396,12 +1412,27 @@ mod tests {
         let output = run_tree(tmp.path(), None, None, false);
         let plain = strip_ansi(&output);
 
-        // task-0002 is closed and excluded from the visible set, so it should
-        // not appear anywhere in the default (no --all) output.
+        // task-0002 is closed but should still appear in the dep list on
+        // task-0001's line (dim+strikethrough) to show it is resolved.
         let line_0001 = plain.lines().find(|l| l.contains("task-0001")).unwrap();
         assert!(
-            !line_0001.contains("task-0002"),
-            "closed dep should not appear on line; line:\n{line_0001}"
+            line_0001.contains("task-0002"),
+            "closed dep should still appear on line (as resolved); line:\n{line_0001}"
+        );
+
+        // The closed dep itself should NOT appear as a tree node (it is not in
+        // the visible set).
+        let node_lines: Vec<&str> = plain
+            .lines()
+            .filter(|l| {
+                l.starts_with("task-0002")
+                    || l.contains("└──") && l.contains("task-0002")
+                    || l.contains("├──") && l.contains("task-0002")
+            })
+            .collect();
+        assert!(
+            node_lines.is_empty(),
+            "closed ticket should not appear as a tree node; found:\n{node_lines:?}"
         );
     }
 

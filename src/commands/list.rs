@@ -47,7 +47,7 @@ fn tty_width() -> Option<usize> {
 /// show only the unclosed subset).  Pass `None` to use `ticket.deps`.
 fn ticket_line(
     ticket: &Ticket,
-    by_id: &HashMap<String, Ticket>,
+    dep_statuses: &HashMap<String, Status>,
     deps_override: Option<&[String]>,
     term_width: Option<usize>,
 ) -> String {
@@ -61,7 +61,7 @@ fn ticket_line(
     } else {
         let labeled: Vec<String> = dep_ids
             .iter()
-            .map(|dep_id| dep_id_label(dep_id, by_id))
+            .map(|dep_id| dep_id_label(dep_id, dep_statuses))
             .collect();
         format!(" [{}]", labeled.join(", "))
     };
@@ -127,9 +127,9 @@ pub(crate) fn format_list(
     // Parse the status filter once up-front so we can return an error early.
     let status_filter: Option<Status> = status.map(|s| s.parse::<Status>()).transpose()?;
 
-    // Build a lookup map for dep coloring.
-    let by_id: HashMap<String, Ticket> =
-        tickets.iter().map(|t| (t.id.clone(), t.clone())).collect();
+    // Build a status lookup map for dep coloring.
+    let dep_statuses: HashMap<String, Status> =
+        tickets.iter().map(|t| (t.id.clone(), t.status.clone())).collect();
 
     // Apply filters.
     let mut filtered: Vec<&Ticket> = tickets
@@ -149,7 +149,7 @@ pub(crate) fn format_list(
 
     let lines: Vec<String> = filtered
         .iter()
-        .map(|t| ticket_line(t, &by_id, None, term_width))
+        .map(|t| ticket_line(t, &dep_statuses, None, term_width))
         .collect();
 
     if lines.is_empty() {
@@ -196,9 +196,9 @@ pub(crate) fn format_ready(
     tag: Option<&str>,
     term_width: Option<usize>,
 ) -> String {
-    // Build a lookup map so dependency checks are O(1).
-    let by_id: HashMap<String, Ticket> =
-        tickets.iter().map(|t| (t.id.clone(), t.clone())).collect();
+    // Build a status lookup map so dependency checks are O(1).
+    let dep_statuses: HashMap<String, Status> =
+        tickets.iter().map(|t| (t.id.clone(), t.status.clone())).collect();
 
     let mut filtered: Vec<&Ticket> = tickets
         .iter()
@@ -209,7 +209,7 @@ pub(crate) fn format_ready(
             }
             // Exclude tickets with any unclosed (or unresolvable) dependency.
             if !t.deps.iter().all(|dep_id| {
-                matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed)
+                matches!(dep_statuses.get(dep_id.as_str()), Some(Status::Closed))
             }) {
                 return false;
             }
@@ -222,7 +222,7 @@ pub(crate) fn format_ready(
     filtered.sort_by(|a, b| a.sort_cmp(b));
 
     // Ready tickets have no relevant dep suffix (all deps are closed).
-    let empty: HashMap<String, Ticket> = HashMap::new();
+    let empty: HashMap<String, Status> = HashMap::new();
     let lines: Vec<String> = filtered
         .iter()
         .map(|t| ticket_line(t, &empty, Some(&[]), term_width))
@@ -272,9 +272,9 @@ pub(crate) fn format_blocked(
     tag: Option<&str>,
     term_width: Option<usize>,
 ) -> String {
-    // Build a lookup map so dependency checks and dep coloring are O(1).
-    let by_id: HashMap<String, Ticket> =
-        tickets.iter().map(|t| (t.id.clone(), t.clone())).collect();
+    // Build a status lookup map so dependency checks and dep coloring are O(1).
+    let dep_statuses: HashMap<String, Status> =
+        tickets.iter().map(|t| (t.id.clone(), t.status.clone())).collect();
 
     let mut filtered: Vec<&Ticket> = tickets
         .iter()
@@ -288,7 +288,7 @@ pub(crate) fn format_blocked(
                 return false;
             }
             let has_unclosed_dep = t.deps.iter().any(|dep_id| {
-                !matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed)
+                !matches!(dep_statuses.get(dep_id.as_str()), Some(Status::Closed))
             });
             if !has_unclosed_dep {
                 return false;
@@ -309,11 +309,11 @@ pub(crate) fn format_blocked(
                 .deps
                 .iter()
                 .filter(|dep_id| {
-                    !matches!(by_id.get(dep_id.as_str()), Some(d) if d.status == Status::Closed)
+                    !matches!(dep_statuses.get(dep_id.as_str()), Some(Status::Closed))
                 })
                 .cloned()
                 .collect();
-            ticket_line(t, &by_id, Some(&open_deps), term_width)
+            ticket_line(t, &dep_statuses, Some(&open_deps), term_width)
         })
         .collect();
 
@@ -366,7 +366,7 @@ pub(crate) fn format_closed_from_paths(
     term_width: Option<usize>,
 ) -> String {
     // Closed tickets have no relevant dep suffix.
-    let empty: HashMap<String, Ticket> = HashMap::new();
+    let empty: HashMap<String, Status> = HashMap::new();
     let results: Vec<String> = paths
         .iter()
         .take(limit)

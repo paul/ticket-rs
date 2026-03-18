@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Closed dependencies are now shown in `tk tree` output with dim and strikethrough styling instead of being hidden, indicating they are resolved and not blocking (tr-889d)
 - Refactor duplicated assignee/tag filter logic in `ls`, `ready`, `blocked`, and `closed` into `Ticket::has_tag` and `Ticket::matches_filters` helpers (tr-d9da)
 - Refactor duplicated sort logic into `Status::sort_key` and `Ticket::sort_cmp`; `ls`, `ready`, and `blocked` now sort by status first (in_progress before open), matching `tree` ordering (tr-9e03)
 - Refactor ticket-line rendering into a shared `format` module; `ls`, `ready`, `blocked`, `closed`, and `dep tree` now use the same colored `{id} {priority} {status} {title} [{deps}] {#tags}` format as `tree`, with terminal-width truncation when stdout is a TTY (tr-533b)

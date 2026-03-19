@@ -1,6 +1,7 @@
 // Error types for the ticket library.
 
 use std::fmt;
+use std::path::PathBuf;
 
 use crate::ticket::Ticket;
 
@@ -20,6 +21,11 @@ pub enum Error {
     },
     /// No `.tickets` directory could be found in the current or any parent directory.
     TicketsNotFound,
+    /// A `TICKET_DIR` override path was set but does not exist on disk.
+    TicketDirNotFound { dir: PathBuf },
+    /// A `TICKET_DIR` override path was set but its parent directory does not
+    /// exist, so creating the final segment is not safe.
+    TicketDirParentNotFound { dir: PathBuf },
     /// An unrecognized status string was encountered.
     InvalidStatus {
         value: String,
@@ -74,6 +80,16 @@ impl fmt::Display for Error {
             }
             Error::TicketsNotFound => {
                 write!(f, "no .tickets directory found")
+            }
+            Error::TicketDirNotFound { dir } => {
+                write!(f, "TICKET_DIR — no such path \"{}\"", dir.display())
+            }
+            Error::TicketDirParentNotFound { dir } => {
+                write!(
+                    f,
+                    "TICKET_DIR — parent directory does not exist for \"{}\"",
+                    dir.display()
+                )
             }
             Error::InvalidStatus { value, suggestion } => {
                 write!(

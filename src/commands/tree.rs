@@ -32,7 +32,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
-use console::{style, Term};
+use console::{Term, style};
 
 use crate::error::{Error, Result};
 use crate::format::{build_line, dep_id_label, priority_label, status_label};
@@ -357,6 +357,13 @@ fn tree_impl(
 
     // Load all tickets.
     let all_tickets: Vec<Ticket> = store.list_tickets();
+
+    if all_tickets.is_empty() {
+        return Ok(format!(
+            "-- Ticket Dir ({}) is empty --\n",
+            store.dir().display()
+        ));
+    }
 
     // Build a status map for ALL tickets (including closed).  This is used by
     // dep rendering so that closed deps can be shown dim+strikethrough even

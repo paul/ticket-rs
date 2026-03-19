@@ -43,6 +43,9 @@ impl TicketStore {
     /// ancestor directories until `.tickets/` is found.
     fn find_impl(start_dir: Option<&Path>, override_dir: Option<PathBuf>) -> Result<Self> {
         if let Some(dir) = override_dir {
+            if !dir.is_dir() {
+                return Err(Error::TicketDirNotFound { dir });
+            }
             return Ok(TicketStore { dir });
         }
 
@@ -79,12 +82,47 @@ impl TicketStore {
         Self::find_impl(start_dir, override_dir)
     }
 
-    /// Like [`TicketStore::find`], but creates `.tickets/` in `start_dir` (or
-    /// cwd) when no existing directory is found.
+    /// Like [`TicketStore::find`], but creates the ticket directory when it
+    /// does not yet exist — subject to safety constraints.
+    ///
+    /// * When the directory was **explicitly configured** (`TICKET_DIR` /
+    ///   `.tickets.toml`) and the configured path is missing, only the **final
+    ///   path segment** is created.  If its parent does not exist an
+    ///   [`Error::TicketDirParentNotFound`] is returned — the tool will never
+    ///   silently create deep directory trees for a user-supplied path.
+    ///
+    /// * In the **default** (no explicit override) case the directory is the
+    ///   literal `.tickets/` entry inside an existing `start_dir` / cwd, so
+    ///   creating it with [`std::fs::create_dir`] is always safe.
+    ///
+    /// In both cases a note is printed to stderr when the directory is newly
+    /// created.
     pub fn ensure(start_dir: Option<&Path>) -> Result<Self> {
-        match Self::find(start_dir) {
+        let override_dir = crate::config::global().ticket_dir.clone();
+        Self::ensure_impl(start_dir, override_dir)
+    }
+
+    /// Core logic for [`TicketStore::ensure`], accepting an explicit override
+    /// so tests can exercise it without touching process-global config state.
+    fn ensure_impl(start_dir: Option<&Path>, override_dir: Option<PathBuf>) -> Result<Self> {
+        match Self::find_impl(start_dir, override_dir.clone()) {
             Ok(store) => Ok(store),
-            Err(Error::TicketsNotFound) => {
+
+            // Configured path missing — only create the final segment.
+            Err(Error::TicketDirNotFound { dir }) => {
+                let parent = dir
+                    .parent()
+                    .ok_or_else(|| Error::TicketDirParentNotFound { dir: dir.clone() })?;
+                if !parent.is_dir() {
+                    return Err(Error::TicketDirParentNotFound { dir });
+                }
+                std::fs::create_dir(&dir)?;
+                eprintln!("Created ticket directory: {}", dir.display());
+                Ok(TicketStore { dir })
+            }
+
+            // Default walk found nothing — create .tickets/ in start_dir/cwd.
+            Err(Error::TicketsNotFound) if override_dir.is_none() => {
                 let cwd;
                 let base = match start_dir {
                     Some(p) => p,
@@ -94,9 +132,11 @@ impl TicketStore {
                     }
                 };
                 let dir = base.join(".tickets");
-                std::fs::create_dir_all(&dir)?;
+                std::fs::create_dir(&dir)?;
+                eprintln!("Created ticket directory: {}", dir.display());
                 Ok(TicketStore { dir })
             }
+
             Err(e) => Err(e),
         }
     }
@@ -112,7 +152,9 @@ impl TicketStore {
 
     /// Create the `.tickets/` directory if it does not already exist.
     pub fn ensure_dir(&self) -> Result<()> {
-        std::fs::create_dir_all(&self.dir)?;
+        if !self.dir.is_dir() {
+            std::fs::create_dir(&self.dir)?;
+        }
         Ok(())
     }
 
@@ -367,6 +409,149 @@ mod tests {
         assert!(
             matches!(err, Error::TicketsNotFound),
             "expected TicketsNotFound, got {err:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // find_impl — override path does not exist → TicketDirNotFound
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn find_impl_override_nonexistent_yields_ticket_dir_not_found() {
+        let root = tempfile::tempdir().unwrap();
+        let nonexistent = root.path().join("does-not-exist");
+
+        let err = TicketStore::find_impl(Some(root.path()), Some(nonexistent.clone())).unwrap_err();
+        assert!(
+            matches!(err, Error::TicketDirNotFound { ref dir } if dir == &nonexistent),
+            "expected TicketDirNotFound, got {err:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // ensure_impl — configured override: creates last segment when parent exists
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ensure_impl_override_creates_dir_when_parent_exists() {
+        let root = tempfile::tempdir().unwrap();
+        // The configured path does not exist yet, but its parent (root) does.
+        let new_dir = root.path().join("my-tickets");
+        assert!(!new_dir.exists(), "precondition: dir should not exist yet");
+
+        let store = TicketStore::ensure_impl(Some(root.path()), Some(new_dir.clone())).unwrap();
+
+        assert!(
+            new_dir.is_dir(),
+            "ensure_impl should have created my-tickets/"
+        );
+        assert_eq!(store.dir(), new_dir);
+    }
+
+    // -----------------------------------------------------------------------
+    // ensure_impl — configured override: fails when parent does not exist
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ensure_impl_override_fails_when_parent_does_not_exist() {
+        let root = tempfile::tempdir().unwrap();
+        // Neither "missing-parent" nor "my-tickets" exist.
+        let new_dir = root.path().join("missing-parent").join("my-tickets");
+        assert!(
+            !new_dir.parent().unwrap().is_dir(),
+            "precondition: parent must not exist"
+        );
+
+        let err = TicketStore::ensure_impl(Some(root.path()), Some(new_dir.clone())).unwrap_err();
+        assert!(
+            matches!(err, Error::TicketDirParentNotFound { ref dir } if dir == &new_dir),
+            "expected TicketDirParentNotFound, got {err:?}"
+        );
+        assert!(
+            !new_dir.exists(),
+            "ensure_impl must not have created any directories"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // ensure_impl — no override: creates .tickets/ in start_dir
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ensure_impl_default_creates_tickets_dir_in_start_dir() {
+        let root = tempfile::tempdir().unwrap();
+        // No .tickets/ yet and no override — should create root/.tickets/
+        let expected = root.path().join(".tickets");
+        assert!(
+            !expected.exists(),
+            "precondition: .tickets/ should not exist yet"
+        );
+
+        let store = TicketStore::ensure_impl(Some(root.path()), None).unwrap();
+
+        assert!(
+            expected.is_dir(),
+            "ensure_impl should have created .tickets/"
+        );
+        assert_eq!(store.dir(), expected);
+    }
+
+    // -----------------------------------------------------------------------
+    // ensure_impl — no override: does not create parent directories
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ensure_impl_default_does_not_use_create_dir_all() {
+        // Verify that ensure_impl with no override uses create_dir (single
+        // level) rather than create_dir_all.  If the start_dir itself doesn't
+        // exist the call must fail rather than creating a whole tree.
+        let root = tempfile::tempdir().unwrap();
+        let nonexistent_start = root.path().join("no-such-dir");
+        // start_dir doesn't exist — create_dir on start_dir/.tickets should fail.
+        let result = TicketStore::ensure_impl(Some(&nonexistent_start), None);
+        assert!(
+            result.is_err(),
+            "ensure_impl should not create intermediate directories"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // error display — TicketDirNotFound
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ticket_dir_not_found_display_contains_path() {
+        let err = Error::TicketDirNotFound {
+            dir: std::path::PathBuf::from("/some/missing/path"),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("/some/missing/path"),
+            "expected path in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("TICKET_DIR"),
+            "expected 'TICKET_DIR' in message, got: {msg}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // error display — TicketDirParentNotFound
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ticket_dir_parent_not_found_display_contains_path() {
+        let err = Error::TicketDirParentNotFound {
+            dir: std::path::PathBuf::from("/nonexistent/parent/dir"),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("/nonexistent/parent/dir"),
+            "expected path in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("TICKET_DIR"),
+            "expected 'TICKET_DIR' in message, got: {msg}"
         );
     }
 

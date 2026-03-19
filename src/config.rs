@@ -17,6 +17,112 @@ use std::sync::LazyLock;
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
+// Path expansion
+// ---------------------------------------------------------------------------
+
+/// Expand shell-style path prefixes in a string, returning a resolved
+/// [`PathBuf`].
+///
+/// Two forms are handled:
+///
+/// * A leading `~` or `~/` is replaced with the value of `$HOME`.
+/// * `$VAR` and `${VAR}` patterns are substituted with the corresponding
+///   environment variable (unrecognised variables are left unchanged).
+///
+/// The expansion is intentionally simple — it is not a full POSIX shell
+/// interpreter.  It handles the patterns that users naturally type in config
+/// files or env vars and that a shell would normally expand for them.
+pub fn expand_path(raw: &str) -> PathBuf {
+    let expanded = expand_vars(raw);
+    PathBuf::from(expanded)
+}
+
+/// Substitute `$VAR` and `${VAR}` patterns, and expand a leading `~`.
+fn expand_vars(raw: &str) -> String {
+    // Handle leading ~ / ~/
+    let s = if raw == "~" {
+        match std::env::var("HOME") {
+            Ok(home) => return expand_dollar_vars(&home),
+            Err(_) => raw.to_string(),
+        }
+    } else if raw.starts_with("~/") {
+        match std::env::var("HOME") {
+            Ok(home) => format!("{}{}", home, &raw[1..]),
+            Err(_) => raw.to_string(),
+        }
+    } else {
+        raw.to_string()
+    };
+
+    expand_dollar_vars(&s)
+}
+
+/// Substitute `$VAR` and `${VAR}` patterns in `s`.
+///
+/// Unknown variables are left as-is so the caller can still detect them.
+fn expand_dollar_vars(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] != '$' {
+            result.push(chars[i]);
+            i += 1;
+            continue;
+        }
+
+        // Found '$'
+        i += 1; // skip '$'
+
+        if i >= chars.len() {
+            result.push('$');
+            break;
+        }
+
+        if chars[i] == '{' {
+            // ${VAR} form
+            i += 1; // skip '{'
+            let start = i;
+            while i < chars.len() && chars[i] != '}' {
+                i += 1;
+            }
+            let var_name: String = chars[start..i].iter().collect();
+            if i < chars.len() {
+                i += 1; // skip '}'
+            }
+            match std::env::var(&var_name) {
+                Ok(val) => result.push_str(&val),
+                Err(_) => {
+                    result.push_str("${");
+                    result.push_str(&var_name);
+                    result.push('}');
+                }
+            }
+        } else if chars[i].is_alphabetic() || chars[i] == '_' {
+            // $VAR form — variable names are alphanumeric + underscore
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let var_name: String = chars[start..i].iter().collect();
+            match std::env::var(&var_name) {
+                Ok(val) => result.push_str(&val),
+                Err(_) => {
+                    result.push('$');
+                    result.push_str(&var_name);
+                }
+            }
+        } else {
+            // Not a valid var start — emit '$' literally
+            result.push('$');
+        }
+    }
+
+    result
+}
+
+// ---------------------------------------------------------------------------
 // Source — tracks where a config value came from
 // ---------------------------------------------------------------------------
 
@@ -124,7 +230,9 @@ impl Config {
             cfg.ticket_prefix_source = Source::File(path.clone());
         }
         if let Some(v) = raw.ticket_dir {
-            cfg.ticket_dir = Some(v);
+            // Apply path expansion so values like ~/foo or $HOME/foo work.
+            let expanded = expand_path(&v.to_string_lossy());
+            cfg.ticket_dir = Some(expanded);
             cfg.ticket_dir_source = Source::File(path);
         }
 
@@ -138,10 +246,10 @@ impl Config {
     fn apply_env(&mut self) {
         // TICKET_DIR takes priority; fall back to TICKETS_DIR for compat.
         if let Ok(val) = std::env::var("TICKET_DIR") {
-            self.ticket_dir = Some(PathBuf::from(val));
+            self.ticket_dir = Some(expand_path(&val));
             self.ticket_dir_source = Source::Env("TICKET_DIR");
         } else if let Ok(val) = std::env::var("TICKETS_DIR") {
-            self.ticket_dir = Some(PathBuf::from(val));
+            self.ticket_dir = Some(expand_path(&val));
             self.ticket_dir_source = Source::Env("TICKETS_DIR");
         }
 
@@ -323,5 +431,93 @@ ticket_dir = "/tmp/tickets"
         unsafe { std::env::remove_var("TICKET_PREFIX") };
         assert_eq!(cfg.ticket_prefix.as_deref(), Some("env"));
         assert_eq!(cfg.ticket_prefix_source, Source::Env("TICKET_PREFIX"));
+    }
+
+    // -----------------------------------------------------------------------
+    // expand_path — path expansion
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn expand_path_absolute_passthrough() {
+        assert_eq!(
+            expand_path("/absolute/path"),
+            PathBuf::from("/absolute/path")
+        );
+    }
+
+    #[test]
+    fn expand_path_tilde_alone() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("HOME", "/home/testuser") };
+        let result = expand_path("~");
+        unsafe { std::env::remove_var("HOME") };
+        assert_eq!(result, PathBuf::from("/home/testuser"));
+    }
+
+    #[test]
+    fn expand_path_tilde_slash() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("HOME", "/home/testuser") };
+        let result = expand_path("~/Code/myapp/.tickets");
+        unsafe { std::env::remove_var("HOME") };
+        assert_eq!(result, PathBuf::from("/home/testuser/Code/myapp/.tickets"));
+    }
+
+    #[test]
+    fn expand_path_dollar_var() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("HOME", "/home/testuser") };
+        let result = expand_path("$HOME/tickets");
+        unsafe { std::env::remove_var("HOME") };
+        assert_eq!(result, PathBuf::from("/home/testuser/tickets"));
+    }
+
+    #[test]
+    fn expand_path_dollar_braces() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("HOME", "/home/testuser") };
+        let result = expand_path("${HOME}/tickets");
+        unsafe { std::env::remove_var("HOME") };
+        assert_eq!(result, PathBuf::from("/home/testuser/tickets"));
+    }
+
+    #[test]
+    fn expand_path_custom_var() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("MYAPP_ROOT", "/srv/myapp") };
+        let result = expand_path("$MYAPP_ROOT/.tickets");
+        unsafe { std::env::remove_var("MYAPP_ROOT") };
+        assert_eq!(result, PathBuf::from("/srv/myapp/.tickets"));
+    }
+
+    #[test]
+    fn expand_path_unknown_var_left_as_is() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("NONEXISTENT_VAR_TKTEST") };
+        let result = expand_path("$NONEXISTENT_VAR_TKTEST/foo");
+        assert_eq!(
+            result,
+            PathBuf::from("$NONEXISTENT_VAR_TKTEST/foo"),
+            "unknown vars should be left as-is"
+        );
+    }
+
+    #[test]
+    fn expand_path_ticket_dir_env_expands_tilde() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("HOME", "/home/testuser");
+            std::env::set_var("TICKET_DIR", "~/work/.tickets");
+        }
+        let mut cfg = Config::default();
+        cfg.apply_env();
+        unsafe {
+            std::env::remove_var("HOME");
+            std::env::remove_var("TICKET_DIR");
+        }
+        assert_eq!(
+            cfg.ticket_dir,
+            Some(PathBuf::from("/home/testuser/work/.tickets"))
+        );
     }
 }

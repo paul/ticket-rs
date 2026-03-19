@@ -22,6 +22,16 @@ use crate::store::TicketStore;
 use crate::ticket::{Status, Ticket};
 
 // ---------------------------------------------------------------------------
+// Empty-dir helper
+// ---------------------------------------------------------------------------
+
+/// Return the message shown when a ticket directory exists but contains no
+/// tickets matching the current command and filters.
+fn empty_dir_message(dir: &Path) -> String {
+    format!("-- Ticket Dir ({}) is empty --\n", dir.display())
+}
+
+// ---------------------------------------------------------------------------
 // TTY detection helper
 // ---------------------------------------------------------------------------
 
@@ -98,8 +108,8 @@ pub fn ls(status: Option<&str>, assignee: Option<&str>, tag: Option<&str>) -> Re
 }
 
 /// Core logic for `ls`.  `start_dir` is passed to `TicketStore::find`; `None`
-/// uses the cwd.  Returns the full formatted output string (empty when no
-/// tickets match).
+/// uses the cwd.  Returns the full formatted output string, or an empty-dir
+/// message when the ticket directory exists but contains no tickets.
 fn ls_impl(
     start_dir: Option<&Path>,
     status: Option<&str>,
@@ -109,8 +119,10 @@ fn ls_impl(
 ) -> Result<String> {
     let store = TicketStore::find(start_dir)?;
     let tickets = store.list_tickets();
-    let output = format_list(&tickets, status, assignee, tag, term_width)?;
-    Ok(output)
+    if tickets.is_empty() {
+        return Ok(empty_dir_message(store.dir()));
+    }
+    format_list(&tickets, status, assignee, tag, term_width)
 }
 
 /// Apply filters, sort, and format a slice of tickets into the output string.
@@ -128,8 +140,10 @@ pub(crate) fn format_list(
     let status_filter: Option<Status> = status.map(|s| s.parse::<Status>()).transpose()?;
 
     // Build a status lookup map for dep coloring.
-    let dep_statuses: HashMap<String, Status> =
-        tickets.iter().map(|t| (t.id.clone(), t.status.clone())).collect();
+    let dep_statuses: HashMap<String, Status> = tickets
+        .iter()
+        .map(|t| (t.id.clone(), t.status.clone()))
+        .collect();
 
     // Apply filters.
     let mut filtered: Vec<&Ticket> = tickets
@@ -178,6 +192,9 @@ fn ready_impl(
 ) -> Result<String> {
     let store = TicketStore::find(start_dir)?;
     let tickets = store.list_tickets();
+    if tickets.is_empty() {
+        return Ok(empty_dir_message(store.dir()));
+    }
     Ok(format_ready(&tickets, assignee, tag, term_width))
 }
 
@@ -197,8 +214,10 @@ pub(crate) fn format_ready(
     term_width: Option<usize>,
 ) -> String {
     // Build a status lookup map so dependency checks are O(1).
-    let dep_statuses: HashMap<String, Status> =
-        tickets.iter().map(|t| (t.id.clone(), t.status.clone())).collect();
+    let dep_statuses: HashMap<String, Status> = tickets
+        .iter()
+        .map(|t| (t.id.clone(), t.status.clone()))
+        .collect();
 
     let mut filtered: Vec<&Ticket> = tickets
         .iter()
@@ -208,9 +227,11 @@ pub(crate) fn format_ready(
                 return false;
             }
             // Exclude tickets with any unclosed (or unresolvable) dependency.
-            if !t.deps.iter().all(|dep_id| {
-                matches!(dep_statuses.get(dep_id.as_str()), Some(Status::Closed))
-            }) {
+            if !t
+                .deps
+                .iter()
+                .all(|dep_id| matches!(dep_statuses.get(dep_id.as_str()), Some(Status::Closed)))
+            {
                 return false;
             }
             // Optional assignee and tag filters.
@@ -254,6 +275,9 @@ fn blocked_impl(
 ) -> Result<String> {
     let store = TicketStore::find(start_dir)?;
     let tickets = store.list_tickets();
+    if tickets.is_empty() {
+        return Ok(empty_dir_message(store.dir()));
+    }
     Ok(format_blocked(&tickets, assignee, tag, term_width))
 }
 
@@ -273,8 +297,10 @@ pub(crate) fn format_blocked(
     term_width: Option<usize>,
 ) -> String {
     // Build a status lookup map so dependency checks and dep coloring are O(1).
-    let dep_statuses: HashMap<String, Status> =
-        tickets.iter().map(|t| (t.id.clone(), t.status.clone())).collect();
+    let dep_statuses: HashMap<String, Status> = tickets
+        .iter()
+        .map(|t| (t.id.clone(), t.status.clone()))
+        .collect();
 
     let mut filtered: Vec<&Ticket> = tickets
         .iter()
@@ -287,9 +313,10 @@ pub(crate) fn format_blocked(
             if t.deps.is_empty() {
                 return false;
             }
-            let has_unclosed_dep = t.deps.iter().any(|dep_id| {
-                !matches!(dep_statuses.get(dep_id.as_str()), Some(Status::Closed))
-            });
+            let has_unclosed_dep = t
+                .deps
+                .iter()
+                .any(|dep_id| !matches!(dep_statuses.get(dep_id.as_str()), Some(Status::Closed)));
             if !has_unclosed_dep {
                 return false;
             }
@@ -308,9 +335,7 @@ pub(crate) fn format_blocked(
             let open_deps: Vec<String> = t
                 .deps
                 .iter()
-                .filter(|dep_id| {
-                    !matches!(dep_statuses.get(dep_id.as_str()), Some(Status::Closed))
-                })
+                .filter(|dep_id| !matches!(dep_statuses.get(dep_id.as_str()), Some(Status::Closed)))
                 .cloned()
                 .collect();
             ticket_line(t, &dep_statuses, Some(&open_deps), term_width)
@@ -346,6 +371,9 @@ fn closed_impl(
     // Retrieve paths sorted by mtime (most recent first) and read only
     // as many as needed for efficiency.
     let paths = store.paths_by_mtime();
+    if paths.is_empty() {
+        return Ok(empty_dir_message(store.dir()));
+    }
     Ok(format_closed_from_paths(
         &paths, limit, assignee, tag, term_width,
     ))
@@ -657,6 +685,67 @@ mod tests {
         assert!(
             output.is_empty(),
             "expected empty output for empty ticket list"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Empty dir message — ls/ready/blocked/closed on empty store
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ls_impl_empty_store_shows_empty_dir_message() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets_dir = root.path().join(".tickets");
+        std::fs::create_dir_all(&tickets_dir).unwrap();
+
+        let output = ls_impl(Some(root.path()), None, None, None, None).unwrap();
+        assert!(
+            output.contains("-- Ticket Dir ("),
+            "expected empty-dir message, got: {output}"
+        );
+        assert!(
+            output.contains("is empty --"),
+            "expected empty-dir message, got: {output}"
+        );
+        assert!(
+            output.contains(tickets_dir.to_str().unwrap()),
+            "expected dir path in message, got: {output}"
+        );
+    }
+
+    #[test]
+    fn ready_impl_empty_store_shows_empty_dir_message() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join(".tickets")).unwrap();
+
+        let output = ready_impl(Some(root.path()), None, None, None).unwrap();
+        assert!(
+            output.contains("is empty --"),
+            "expected empty-dir message, got: {output}"
+        );
+    }
+
+    #[test]
+    fn blocked_impl_empty_store_shows_empty_dir_message() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join(".tickets")).unwrap();
+
+        let output = blocked_impl(Some(root.path()), None, None, None).unwrap();
+        assert!(
+            output.contains("is empty --"),
+            "expected empty-dir message, got: {output}"
+        );
+    }
+
+    #[test]
+    fn closed_impl_empty_store_shows_empty_dir_message() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join(".tickets")).unwrap();
+
+        let output = closed_impl(Some(root.path()), 20, None, None, None).unwrap();
+        assert!(
+            output.contains("is empty --"),
+            "expected empty-dir message, got: {output}"
         );
     }
 

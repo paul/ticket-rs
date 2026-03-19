@@ -2,8 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Expand `~`, `$VAR`, and `${VAR}` in `TICKET_DIR` values from env vars and `.tickets.toml`, so paths like `~/Code/myapp/.tickets` now work as expected (tr-ca22)
+
 ### Changed
 
+- When `TICKET_DIR` points to a path that does not exist, the tool now exits with an error (`TICKET_DIR — no such path "..."`) instead of silently producing no output (tr-ca22)
+- `tk create` with a configured `TICKET_DIR` whose parent exists now creates only the final path segment rather than the full tree; if the parent is missing it exits with a clear error (tr-ca22)
+- `tk ls`, `ready`, `blocked`, `closed`, and `tree` now print `-- Ticket Dir (...) is empty --` when the store exists but contains no tickets, instead of producing no output (tr-ca22)
 - Closed dependencies are now shown in `tk tree` output with dim and strikethrough styling instead of being hidden, indicating they are resolved and not blocking (tr-889d)
 - Refactor duplicated assignee/tag filter logic in `ls`, `ready`, `blocked`, and `closed` into `Ticket::has_tag` and `Ticket::matches_filters` helpers (tr-d9da)
 - Refactor duplicated sort logic into `Status::sort_key` and `Ticket::sort_cmp`; `ls`, `ready`, and `blocked` now sort by status first (in_progress before open), matching `tree` ordering (tr-9e03)

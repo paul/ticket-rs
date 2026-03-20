@@ -27,7 +27,7 @@ use crate::ticket::{Status, Ticket};
 
 /// Return the message shown when a ticket directory exists but contains no
 /// tickets matching the current command and filters.
-fn empty_dir_message(dir: &Path) -> String {
+pub(crate) fn empty_dir_message(dir: &Path) -> String {
     format!("-- Ticket Dir ({}) is empty --\n", dir.display())
 }
 
@@ -35,7 +35,7 @@ fn empty_dir_message(dir: &Path) -> String {
 // TTY detection helper
 // ---------------------------------------------------------------------------
 
-fn tty_width() -> Option<usize> {
+pub(crate) fn tty_width() -> Option<usize> {
     let term = Term::stdout();
     if term.is_term() {
         let (_rows, cols) = term.size();
@@ -55,7 +55,7 @@ fn tty_width() -> Option<usize> {
 /// dep coloring is not needed (e.g. `ready`, which has no dep suffix).
 /// `deps_override` replaces the ticket's own deps list (used by `blocked` to
 /// show only the unclosed subset).  Pass `None` to use `ticket.deps`.
-fn ticket_line(
+pub(crate) fn ticket_line(
     ticket: &Ticket,
     dep_statuses: &HashMap<String, Status>,
     deps_override: Option<&[String]>,

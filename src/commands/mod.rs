@@ -33,5 +33,8 @@ pub use tree::tree;
 mod show_config;
 pub use show_config::show_config;
 
+mod search;
+pub use search::search;
+
 mod update;
 pub use update::update;

@@ -206,6 +206,20 @@ fn dispatch(command: Commands) -> ticket_rs::error::Result<()> {
             tag,
         } => commands::ls(status.as_deref(), assignee.as_deref(), tag.as_deref()),
 
+        Commands::Search {
+            query,
+            all,
+            status,
+            assignee,
+            tag,
+        } => commands::search(
+            &query,
+            all,
+            status.as_deref(),
+            assignee.as_deref(),
+            tag.as_deref(),
+        ),
+
         Commands::Ready { assignee, tag } => commands::ready(assignee.as_deref(), tag.as_deref()),
 
         Commands::Blocked { assignee, tag } => {

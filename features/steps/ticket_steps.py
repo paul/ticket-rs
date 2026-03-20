@@ -207,6 +207,41 @@ Description
     ticket_path.write_text(content)
 
 
+@given(r'ticket "(?P<ticket_id>[^"]+)" has body containing "(?P<text>[^"]+)"')
+def step_ticket_body_contains(context, ticket_id, text):
+    """Append text to the body of an existing ticket."""
+    ticket_path = Path(context.test_dir) / '.tickets' / f'{ticket_id}.md'
+    content = ticket_path.read_text()
+    content = content.rstrip('\n') + f'\n\n{text}\n'
+    ticket_path.write_text(content)
+
+
+@given(r'ticket "(?P<ticket_id>[^"]+)" has assignee "(?P<assignee>[^"]+)"')
+def step_ticket_has_assignee(context, ticket_id, assignee):
+    """Set the assignee field of an existing ticket."""
+    ticket_path = Path(context.test_dir) / '.tickets' / f'{ticket_id}.md'
+    content = ticket_path.read_text()
+    # Insert assignee after the priority line if not already present.
+    if 'assignee:' in content:
+        content = re.sub(r'^assignee: .*$', f'assignee: {assignee}', content, flags=re.MULTILINE)
+    else:
+        content = re.sub(r'^(priority: \d+)$', rf'\1\nassignee: {assignee}', content, flags=re.MULTILINE)
+    ticket_path.write_text(content)
+
+
+@given(r'ticket "(?P<ticket_id>[^"]+)" has tags "(?P<tags>[^"]+)"')
+def step_ticket_has_tags(context, ticket_id, tags):
+    """Set the tags field of an existing ticket (comma-separated list)."""
+    ticket_path = Path(context.test_dir) / '.tickets' / f'{ticket_id}.md'
+    content = ticket_path.read_text()
+    tag_list = ', '.join(t.strip() for t in tags.split(','))
+    if 'tags:' in content:
+        content = re.sub(r'^tags: \[.*?\]', f'tags: [{tag_list}]', content, flags=re.MULTILINE)
+    else:
+        content = re.sub(r'^(priority: \d+)', rf'\1\ntags: [{tag_list}]', content, flags=re.MULTILINE)
+    ticket_path.write_text(content)
+
+
 # ============================================================================
 # When Steps
 # ============================================================================

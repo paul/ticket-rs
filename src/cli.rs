@@ -225,6 +225,28 @@ EXAMPLES
         tag: Option<String>,
     },
 
+    /// Search tickets by title and body (case-insensitive substring match).
+    Search {
+        /// Search query (matched case-insensitively against title and body).
+        query: String,
+
+        /// Include closed tickets (default: closed tickets are excluded).
+        #[arg(long)]
+        all: bool,
+
+        /// Filter by status (open, in_progress, closed).
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Filter by assignee name.
+        #[arg(short = 'a', long)]
+        assignee: Option<String>,
+
+        /// Filter by tag.
+        #[arg(short = 'T', long = "tags", visible_alias = "tag")]
+        tag: Option<String>,
+    },
+
     // ── Phase 4: update & notes ─────────────────────────────────────
     /// Modify a ticket's fields.
     #[command(after_long_help = "\
